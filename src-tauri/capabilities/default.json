@@ -1,0 +1,29 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for the app",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "fs:default",
+    "fs:allow-app-read",
+    "fs:allow-app-write",
+    "fs:allow-app-meta",
+    "fs:allow-app-read-recursive",
+    "fs:allow-app-write-recursive",
+    "fs:allow-appdata-read",
+    "fs:allow-appdata-write",
+    "fs:allow-appdata-meta",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-download-read",
+    "fs:allow-download-write",
+    "fs:allow-download-meta",
+    "fs:allow-temp-read",
+    "fs:allow-temp-write",
+    "fs:allow-temp-meta",
+    "shell:default",
+    "shell:allow-execute",
+    "shell:allow-open"
+  ]
+}

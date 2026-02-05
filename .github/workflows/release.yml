@@ -1,0 +1,83 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  publish:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            suffix: 'macos-universal'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            suffix: 'linux-x86_64'
+          - platform: 'windows-latest'
+            args: ''
+            suffix: 'windows-x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "App Release ${{ github.ref_name }}"
+          releaseBody: "Bản dựng tự động cho phiên bản ${{ github.ref_name }}"
+          args: ${{ matrix.args }}
+      - name: Collect Artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-artifacts
+          find src-tauri/target -name "*.exe" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          find src-tauri/target -name "*.msi" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          find src-tauri/target -name "*.AppImage" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          find src-tauri/target -name "*.deb" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          find src-tauri/target -name "*.dmg" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+
+      - name: Upload Artifacts to Action
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.suffix }}
+          path: dist-artifacts/*
+
+      - name: Update GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

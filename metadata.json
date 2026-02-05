@@ -1,0 +1,5 @@
+{
+  "name": "EnviroAnalyzer Pro",
+  "description": "A minimalist, high-performance environmental data analysis tool featuring QCVN compliance checking, seeded random data generation, and interactive visualizations.",
+  "requestFramePermissions": []
+}
