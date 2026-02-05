@@ -1,0 +1,83 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  publish:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            suffix: 'macos-universal'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            suffix: 'linux-x86_64'
+          - platform: 'windows-latest'
+            args: ''
+            suffix: 'windows-x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "App release version ${{ github.ref_name }}"
+          args: ${{ matrix.args }}
+
+      - name: Collect Standalone Executables
+        shell: bash
+        run: |
+          mkdir -p standalone-artifacts
+          # Windows: collect the main exe from release build (not from installer)
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            find src-tauri/target/release -maxdepth 1 -name "*.exe" ! -name "build_script*" ! -name "build-script*" -exec cp {} standalone-artifacts/ \;
+          fi
+          # Linux: AppImage is already standalone, tauri-action handles it
+          # macOS: collect .app bundle from release build
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" -exec cp -r {} standalone-artifacts/ \; 2>/dev/null || true
+            find src-tauri/target/release/bundle/macos -maxdepth 1 -name "*.app" -exec cp -r {} standalone-artifacts/ \; 2>/dev/null || true
+          fi
+          ls -lah standalone-artifacts/ || true
+
+      - name: Upload Standalone Executables to Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') && hashFiles('standalone-artifacts/*') != ''
+        with:
+          files: standalone-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

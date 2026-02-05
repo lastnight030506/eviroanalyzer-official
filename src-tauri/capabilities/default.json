@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for the app",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "fs:default",
+    "fs:allow-app-read",
+    "fs:allow-app-write",
+    "fs:allow-app-meta"
+  ]
+}
