@@ -56,10 +56,10 @@ jobs:
           # Remove 'v' prefix if present
           VERSION_CLEAN="${VERSION#v}"
           echo "Updating version to: $VERSION_CLEAN"
-          # Update Cargo.toml
-          sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION_CLEAN\"/" src-tauri/Cargo.toml
-          # Update tauri.conf.json
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION_CLEAN\"/" src-tauri/tauri.conf.json
+          # Update Cargo.toml (cross-platform sed)
+          sed -i.bak "s/^version = \"[^\"]*\"/version = \"$VERSION_CLEAN\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
+          # Update tauri.conf.json (cross-platform sed)
+          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION_CLEAN\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
           # Verify changes
           echo "Cargo.toml version:"
           grep "^version" src-tauri/Cargo.toml
