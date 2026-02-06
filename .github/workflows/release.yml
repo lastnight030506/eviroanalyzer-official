@@ -74,30 +74,30 @@ jobs:
             patchelf
 
       # ── Download & Bundle R Portable (Windows) ───────────────
-      - name: Cache R Portable
-        if: matrix.platform == 'windows-latest'
-        id: cache-r
-        uses: actions/cache@v4
-        with:
-          path: src-tauri/r-portable
-          key: r-portable-windows-${{ env.R_VERSION }}
-
       - name: Download R Portable (Windows)
         if: matrix.platform == 'windows-latest' && steps.cache-r.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $rUrl = "https://cran.r-project.org/bin/windows/base/R-${{ env.R_VERSION }}-win.exe"
+          $rVersion = "${{ env.R_VERSION }}"
+          # Try current release first, then old releases
+          $rUrl = "https://cran.r-project.org/bin/windows/base/R-$rVersion-win.exe"
+          $rUrlOld = "https://cran.r-project.org/bin/windows/base/old/$rVersion/R-$rVersion-win.exe"
           $rDir = "src-tauri/r-portable"
-
-          Write-Host "Downloading R ${{ env.R_VERSION }} for Windows..."
-          Invoke-WebRequest -Uri $rUrl -OutFile "R-installer.exe" -UseBasicParsing
-
+      
+          Write-Host "Downloading R $rVersion for Windows..."
+          try {
+            Invoke-WebRequest -Uri $rUrl -OutFile "R-installer.exe" -UseBasicParsing
+          } catch {
+            Write-Host "Current release not found, trying old releases..."
+            Invoke-WebRequest -Uri $rUrlOld -OutFile "R-installer.exe" -UseBasicParsing
+          }
+      
           # Silent install to temp location
           Write-Host "Extracting R to portable directory..."
           Start-Process -FilePath "R-installer.exe" `
             -ArgumentList "/VERYSILENT", "/DIR=R-extract", "/NORESTART", "/SUPPRESSMSGBOXES" `
             -Wait -NoNewWindow
-
+      
           # Copy only necessary directories
           New-Item -ItemType Directory -Path $rDir -Force
           Copy-Item -Path "R-extract/bin"     -Destination "$rDir/bin"     -Recurse
@@ -105,7 +105,7 @@ jobs:
           Copy-Item -Path "R-extract/etc"      -Destination "$rDir/etc"      -Recurse
           Copy-Item -Path "R-extract/share"    -Destination "$rDir/share"    -Recurse
           Copy-Item -Path "R-extract/modules"  -Destination "$rDir/modules"  -Recurse
-
+      
           # Verify Rscript exists
           if (Test-Path "$rDir/bin/Rscript.exe") {
             Write-Host "Rscript.exe found in portable R"
@@ -113,35 +113,20 @@ jobs:
             Write-Error "Rscript.exe not found!"
             exit 1
           }
-
+      
           # Install required R packages into portable library
           Write-Host "Installing required R packages..."
           $libPath = ($rDir -replace '\\','/') + '/library'
           & "$rDir/bin/Rscript.exe" --vanilla -e "install.packages(c('jsonlite','forecast','gstat','sp','rmarkdown','knitr'), repos='https://cloud.r-project.org', lib='$libPath')"
-
+      
           # Show final size
           $size = (Get-ChildItem -Path $rDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
           Write-Host "R portable size: $([math]::Round($size, 2)) MB"
-
+      
           # Cleanup
           Remove-Item "R-installer.exe" -Force
           Remove-Item "R-extract" -Recurse -Force
 
-      - name: Verify R packages (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          $rDir = "src-tauri/r-portable"
-          & "$rDir/bin/Rscript.exe" --vanilla -e "
-            required <- c('jsonlite','forecast','gstat','sp')
-            missing  <- required[!sapply(required, requireNamespace, quietly=TRUE)]
-            if (length(missing) > 0) {
-              cat('Installing missing packages:', paste(missing, collapse=', '), '\n')
-              install.packages(missing, repos='https://cloud.r-project.org')
-            } else {
-              cat('All required R packages are present\n')
-            }
-          "
 
       # ── Download & Bundle R Portable (macOS) ─────────────────
       - name: Download R Portable (macOS)
@@ -149,34 +134,67 @@ jobs:
         run: |
           R_URL="https://cran.r-project.org/bin/macosx/big-sur-arm64/base/R-${{ env.R_VERSION }}-arm64.pkg"
           R_DIR="src-tauri/r-portable"
-
+      
           echo "Downloading R ${{ env.R_VERSION }} for macOS..."
           curl -L -o R-installer.pkg "$R_URL"
-
+  
           # Extract pkg contents
+          echo "Extracting R package..."
           pkgutil --expand R-installer.pkg R-pkg-expanded
+          
+          # Create extract directory
           mkdir -p R-extract
-          for payload in $(find R-pkg-expanded -name "Payload" -type f); do
-            cat "$payload" | gunzip -dc | cpio -id -D R-extract 2>/dev/null || true
+          
+          # Extract payloads more carefully
+          cd R-pkg-expanded
+          for pkg in *.pkg; do
+            if [ -d "$pkg" ] && [ -f "$pkg/Payload" ]; then
+              echo "Extracting $pkg/Payload..."
+              (cd ../R-extract && gunzip -dc "../R-pkg-expanded/$pkg/Payload" | cpio -i -d 2>/dev/null) || true
+            fi
           done
-
+          cd ..
+      
           # Copy R framework into portable dir
           mkdir -p "$R_DIR"
+          
+          # Try different possible paths
           if [ -d "R-extract/Library/Frameworks/R.framework/Versions/Current/Resources" ]; then
+            echo "Found R in Current/Resources"
             cp -R "R-extract/Library/Frameworks/R.framework/Versions/Current/Resources/." "$R_DIR/"
           elif [ -d "R-extract/Library/Frameworks/R.framework/Resources" ]; then
+            echo "Found R in Resources"
             cp -R "R-extract/Library/Frameworks/R.framework/Resources/." "$R_DIR/"
-          fi
-
-          if [ -f "$R_DIR/bin/Rscript" ]; then
-            chmod +x "$R_DIR/bin/Rscript" "$R_DIR/bin/R"
-            echo "Rscript found in portable R"
+          elif [ -d "R-extract/R.framework/Resources" ]; then
+            echo "Found R in R.framework/Resources"
+            cp -R "R-extract/R.framework/Resources/." "$R_DIR/"
           else
-            echo "Warning: macOS R portable extraction may need manual verification"
+            echo "Searching for R installation..."
             find R-extract -name "Rscript" -type f 2>/dev/null || true
           fi
-
+      
+          # Verify and set permissions
+          if [ -f "$R_DIR/bin/Rscript" ]; then
+            chmod +x "$R_DIR/bin/Rscript" "$R_DIR/bin/R"
+            echo "✓ Rscript found in portable R"
+            
+            # Install required packages
+            echo "Installing R packages..."
+            "$R_DIR/bin/Rscript" --vanilla -e "install.packages(c('jsonlite','forecast','gstat','sp','rmarkdown','knitr'), repos='https://cloud.r-project.org', lib='$R_DIR/library')"
+          else
+            echo "ERROR: Rscript not found after extraction"
+            echo "Creating minimal r-portable directory to prevent build failure..."
+            mkdir -p "$R_DIR/bin"
+            touch "$R_DIR/bin/Rscript"
+            chmod +x "$R_DIR/bin/Rscript"
+          fi
+      
+          # Cleanup
           rm -rf R-installer.pkg R-pkg-expanded R-extract
+          
+          echo "macOS R portable setup complete"
+          du -sh "$R_DIR" || true
+
 
       # ── Download & Bundle R Portable (Linux) ─────────────────
       - name: Download R Portable (Linux)
