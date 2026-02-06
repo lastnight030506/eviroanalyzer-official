@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+  # Cho phép chạy thủ công từ tab Actions
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+            suffix: macos-universal
+          - platform: ubuntu-22.04
+            args: ''
+            suffix: linux-x86_64
+          - platform: windows-latest
+            args: ''
+            suffix: windows-x64
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Node.js ──────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── Rust ─────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # ── Linux dependencies (Tauri v2 requires webkit2gtk-4.1) ─
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ── Frontend ─────────────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── Build & Release ──────────────────────────────────────
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'EnviroAnalyzer Pro ${{ github.ref_name }}'
+          releaseBody: |
+            ## EnviroAnalyzer Pro ${{ github.ref_name }}
+
+            Bản dựng tự động. Tải file phù hợp với hệ điều hành:
+            - **Windows**: `.exe` (NSIS installer)
+            - **macOS**: `.dmg` (Universal - Intel + Apple Silicon)
+            - **Linux**: `.AppImage`
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # ── Upload artifacts (backup, ngoài GitHub Release) ──────
+      - name: Collect build artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-artifacts
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            find src-tauri/target/release/bundle -type f \( -name "*.exe" -o -name "*.msi" \) -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          elif [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            find src-tauri/target/universal-apple-darwin/release/bundle -type f -name "*.dmg" -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          else
+            find src-tauri/target/release/bundle -type f \( -name "*.AppImage" -o -name "*.deb" \) -exec cp {} dist-artifacts/ \; 2>/dev/null || true
+          fi
+          echo "=== Collected artifacts ==="
+          ls -lh dist-artifacts/ || echo "No artifacts found"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.suffix }}
+          path: dist-artifacts/*
+          if-no-files-found: warn
