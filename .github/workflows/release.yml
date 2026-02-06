@@ -8,6 +8,9 @@ on:
   # Cho phép chạy thủ công từ tab Actions
   workflow_dispatch:
 
+env:
+  R_VERSION: '4.4.2'
+
 jobs:
   build-and-release:
     permissions:
@@ -38,7 +41,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+<<<<<<< HEAD
 
+=======
+>>>>>>> 99a1af8 (update)
 
       # ── Rust ─────────────────────────────────────────────────
       - name: Install Rust stable
@@ -71,6 +77,137 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # ── Download & Bundle R Portable (Windows) ───────────────
+      - name: Cache R Portable
+        if: matrix.platform == 'windows-latest'
+        id: cache-r
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/r-portable
+          key: r-portable-windows-${{ env.R_VERSION }}
+
+      - name: Download R Portable (Windows)
+        if: matrix.platform == 'windows-latest' && steps.cache-r.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $rUrl = "https://cran.r-project.org/bin/windows/base/R-${{ env.R_VERSION }}-win.exe"
+          $rDir = "src-tauri/r-portable"
+
+          Write-Host "Downloading R ${{ env.R_VERSION }} for Windows..."
+          Invoke-WebRequest -Uri $rUrl -OutFile "R-installer.exe" -UseBasicParsing
+
+          # Silent install to temp location
+          Write-Host "Extracting R to portable directory..."
+          Start-Process -FilePath "R-installer.exe" `
+            -ArgumentList "/VERYSILENT", "/DIR=R-extract", "/NORESTART", "/SUPPRESSMSGBOXES" `
+            -Wait -NoNewWindow
+
+          # Copy only necessary directories
+          New-Item -ItemType Directory -Path $rDir -Force
+          Copy-Item -Path "R-extract/bin"     -Destination "$rDir/bin"     -Recurse
+          Copy-Item -Path "R-extract/library"  -Destination "$rDir/library"  -Recurse
+          Copy-Item -Path "R-extract/etc"      -Destination "$rDir/etc"      -Recurse
+          Copy-Item -Path "R-extract/share"    -Destination "$rDir/share"    -Recurse
+          Copy-Item -Path "R-extract/modules"  -Destination "$rDir/modules"  -Recurse
+
+          # Verify Rscript exists
+          if (Test-Path "$rDir/bin/Rscript.exe") {
+            Write-Host "Rscript.exe found in portable R"
+          } else {
+            Write-Error "Rscript.exe not found!"
+            exit 1
+          }
+
+          # Install required R packages into portable library
+          Write-Host "Installing required R packages..."
+          $libPath = ($rDir -replace '\\','/') + '/library'
+          & "$rDir/bin/Rscript.exe" --vanilla -e "install.packages(c('jsonlite','forecast','gstat','sp','rmarkdown','knitr'), repos='https://cloud.r-project.org', lib='$libPath')"
+
+          # Show final size
+          $size = (Get-ChildItem -Path $rDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host "R portable size: $([math]::Round($size, 2)) MB"
+
+          # Cleanup
+          Remove-Item "R-installer.exe" -Force
+          Remove-Item "R-extract" -Recurse -Force
+
+      - name: Verify R packages (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $rDir = "src-tauri/r-portable"
+          & "$rDir/bin/Rscript.exe" --vanilla -e "
+            required <- c('jsonlite','forecast','gstat','sp')
+            missing  <- required[!sapply(required, requireNamespace, quietly=TRUE)]
+            if (length(missing) > 0) {
+              cat('Installing missing packages:', paste(missing, collapse=', '), '\n')
+              install.packages(missing, repos='https://cloud.r-project.org')
+            } else {
+              cat('All required R packages are present\n')
+            }
+          "
+
+      # ── Download & Bundle R Portable (macOS) ─────────────────
+      - name: Download R Portable (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          R_URL="https://cran.r-project.org/bin/macosx/big-sur-arm64/base/R-${{ env.R_VERSION }}-arm64.pkg"
+          R_DIR="src-tauri/r-portable"
+
+          echo "Downloading R ${{ env.R_VERSION }} for macOS..."
+          curl -L -o R-installer.pkg "$R_URL"
+
+          # Extract pkg contents
+          pkgutil --expand R-installer.pkg R-pkg-expanded
+          mkdir -p R-extract
+          for payload in $(find R-pkg-expanded -name "Payload" -type f); do
+            cat "$payload" | gunzip -dc | cpio -id -D R-extract 2>/dev/null || true
+          done
+
+          # Copy R framework into portable dir
+          mkdir -p "$R_DIR"
+          if [ -d "R-extract/Library/Frameworks/R.framework/Versions/Current/Resources" ]; then
+            cp -R "R-extract/Library/Frameworks/R.framework/Versions/Current/Resources/." "$R_DIR/"
+          elif [ -d "R-extract/Library/Frameworks/R.framework/Resources" ]; then
+            cp -R "R-extract/Library/Frameworks/R.framework/Resources/." "$R_DIR/"
+          fi
+
+          if [ -f "$R_DIR/bin/Rscript" ]; then
+            chmod +x "$R_DIR/bin/Rscript" "$R_DIR/bin/R"
+            echo "Rscript found in portable R"
+          else
+            echo "Warning: macOS R portable extraction may need manual verification"
+            find R-extract -name "Rscript" -type f 2>/dev/null || true
+          fi
+
+          rm -rf R-installer.pkg R-pkg-expanded R-extract
+
+      # ── Download & Bundle R Portable (Linux) ─────────────────
+      - name: Download R Portable (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          R_DIR="src-tauri/r-portable"
+
+          echo "Installing R system-wide and creating portable bundle..."
+          sudo apt-get install -y r-base r-base-dev
+
+          mkdir -p "$R_DIR/bin" "$R_DIR/library" "$R_DIR/etc" "$R_DIR/lib"
+          cp /usr/bin/Rscript "$R_DIR/bin/"
+          cp /usr/bin/R "$R_DIR/bin/"
+          cp -R /usr/lib/R/etc/*     "$R_DIR/etc/"     2>/dev/null || true
+          cp -R /usr/lib/R/library/* "$R_DIR/library/" 2>/dev/null || true
+          cp -R /usr/lib/R/lib/*     "$R_DIR/lib/"     2>/dev/null || true
+          cp -R /usr/lib/R/bin/*     "$R_DIR/bin/"     2>/dev/null || true
+          cp -R /usr/lib/R/modules   "$R_DIR/"         2>/dev/null || true
+          cp -R /usr/share/R         "$R_DIR/share"    2>/dev/null || true
+
+          # Install required packages
+          sudo Rscript --vanilla -e "install.packages(c('jsonlite','forecast','gstat','sp'), repos='https://cloud.r-project.org')"
+          cp -R /usr/local/lib/R/site-library/* "$R_DIR/library/" 2>/dev/null || true
+
+          echo "Linux R portable bundle created"
+          du -sh "$R_DIR"
+
       # ── Frontend ─────────────────────────────────────────────
       - name: Install frontend dependencies
         run: npm install
@@ -86,10 +223,14 @@ jobs:
           releaseBody: |
             ## EnviroAnalyzer Pro ${{ github.ref_name }}
 
-            Bản dựng tự động. Tải file phù hợp với hệ điều hành:
-            - **Windows**: `.exe` (NSIS installer)
-            - **macOS**: `.dmg` (Universal - Intel + Apple Silicon)
-            - **Linux**: `.AppImage`
+            ### Bản dựng đầy đủ - Bao gồm R portable
+
+            Tải file phù hợp với hệ điều hành:
+            - **Windows**: `.exe` (NSIS installer) - Đã tích hợp R, sử dụng ngay
+            - **macOS**: `.dmg` (Universal - Intel + Apple Silicon) - Đã tích hợp R
+            - **Linux**: `.AppImage` - Đã tích hợp R
+
+            > Không cần cài đặt R riêng. Tất cả tính năng Forecast, GIS, Report đều hoạt động ngay.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

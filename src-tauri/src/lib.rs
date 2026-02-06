@@ -10,35 +10,75 @@ pub struct RScriptResult {
     pub error: Option<String>,
 }
 
-/// Find Rscript executable on Windows
-fn find_rscript() -> Option<PathBuf> {
-    // Try common R installation paths on Windows
-    let program_files = vec![
-        "C:\\Program Files\\R",
-        "C:\\Program Files (x86)\\R",
-    ];
-    
-    for base in program_files {
-        if let Ok(entries) = std::fs::read_dir(base) {
-            // Get the latest R version
-            let mut versions: Vec<_> = entries
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_name().to_string_lossy().starts_with("R-"))
-                .collect();
-            
-            // Sort by version (descending)
-            versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-            
-            if let Some(latest) = versions.first() {
-                let rscript = latest.path().join("bin").join("Rscript.exe");
-                if rscript.exists() {
-                    return Some(rscript);
+/// Find R_HOME for bundled R portable
+fn find_r_home(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    // Check resource directory (production)
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let r_home = resource_dir.join("r-portable");
+        if r_home.exists() && r_home.is_dir() {
+            return Some(r_home);
+        }
+    }
+
+    // Check development path
+    let dev_r_home = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("r-portable");
+    if dev_r_home.exists() && dev_r_home.is_dir() {
+        return Some(dev_r_home);
+    }
+
+    None
+}
+
+/// Find Rscript executable - prioritize bundled R portable
+fn find_rscript(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    // Priority 1: Bundled R portable (resource directory)
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let candidates = if cfg!(windows) {
+            vec![resource_dir.join("r-portable").join("bin").join("Rscript.exe")]
+        } else {
+            vec![resource_dir.join("r-portable").join("bin").join("Rscript")]
+        };
+        for candidate in candidates {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Priority 2: Development - relative to CARGO_MANIFEST_DIR
+    let dev_rscript = if cfg!(windows) {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("r-portable").join("bin").join("Rscript.exe")
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("r-portable").join("bin").join("Rscript")
+    };
+    if dev_rscript.exists() {
+        return Some(dev_rscript);
+    }
+
+    // Priority 3: System-installed R on Windows
+    if cfg!(windows) {
+        let program_files = vec![
+            "C:\\Program Files\\R",
+            "C:\\Program Files (x86)\\R",
+        ];
+        for base in program_files {
+            if let Ok(entries) = std::fs::read_dir(base) {
+                let mut versions: Vec<_> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("R-"))
+                    .collect();
+                versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                if let Some(latest) = versions.first() {
+                    let rscript = latest.path().join("bin").join("Rscript.exe");
+                    if rscript.exists() {
+                        return Some(rscript);
+                    }
                 }
             }
         }
     }
-    
-    // Fallback: try PATH
+
+    // Priority 4: Fallback to PATH
     None
 }
 
@@ -94,16 +134,29 @@ fn run_r_script(
         ));
     }
 
-    // Find Rscript executable
-    let rscript_path = find_rscript()
+    // Find Rscript executable (prioritizes bundled R portable)
+    let rscript_path = find_rscript(&app_handle)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "Rscript".to_string());
+
+    // Set R_HOME for bundled R portable
+    let r_home = find_r_home(&app_handle);
 
     // Execute Rscript command
     let mut command = Command::new(&rscript_path);
     command.arg("--vanilla"); // No startup files
     command.arg(&script_path);
     command.args(&args);
+
+    // Set R_HOME and R_LIBS environment variables if using bundled R
+    if let Some(home) = &r_home {
+        command.env("R_HOME", home);
+        let r_libs = home.join("library");
+        if r_libs.exists() {
+            command.env("R_LIBS", r_libs.to_string_lossy().to_string());
+            command.env("R_LIBS_USER", r_libs.to_string_lossy().to_string());
+        }
+    }
 
     let output = command
         .output()
@@ -139,11 +192,22 @@ fn run_r_script(
 fn debug_r_paths(app_handle: tauri::AppHandle) -> Result<String, String> {
     let mut info = String::new();
     
-    // Check R installation
-    info.push_str("=== R Installation ===\n");
-    match find_rscript() {
-        Some(p) => info.push_str(&format!("Rscript found: {}\n", p.display())),
-        None => info.push_str("Rscript NOT found in Program Files\n"),
+    // Check bundled R
+    info.push_str("=== Bundled R Portable ===\n");
+    match find_r_home(&app_handle) {
+        Some(p) => {
+            info.push_str(&format!("R_HOME found: {}\n", p.display()));
+            let rscript = p.join("bin").join(if cfg!(windows) { "Rscript.exe" } else { "Rscript" });
+            info.push_str(&format!("Rscript exists: {}\n", rscript.exists()));
+        },
+        None => info.push_str("Bundled R NOT found\n"),
+    }
+
+    // Check R resolution
+    info.push_str("\n=== R Resolution ===\n");
+    match find_rscript(&app_handle) {
+        Some(p) => info.push_str(&format!("Rscript resolved to: {}\n", p.display())),
+        None => info.push_str("Rscript NOT found anywhere (will fallback to PATH)\n"),
     }
     
     // Check scripts directory

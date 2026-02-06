@@ -4,3 +4,6 @@
 /gen/schemas
 
 .secrets
+
+# R portable (downloaded during CI build)
+/r-portable/
