@@ -71,7 +71,10 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            libcurl4-openssl-dev \
+            libudunits2-dev \
+            pkg-config
 
       # ── Download & Bundle R Portable (Windows) ───────────────
       - name: Download R Portable (Windows)
