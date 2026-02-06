@@ -38,7 +38,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+
 
       # ── Rust ─────────────────────────────────────────────────
       - name: Install Rust stable
@@ -73,7 +73,7 @@ jobs:
 
       # ── Frontend ─────────────────────────────────────────────
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm install
 
       # ── Build & Release ──────────────────────────────────────
       - name: Build Tauri app
