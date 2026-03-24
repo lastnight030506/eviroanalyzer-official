@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { STANDARDS } from './constants';
 import { loadRegulations, saveRegulations, addRegulation, updateRegulation, deleteRegulation, resetRegulations } from './services/regulations';
 import { generateMockData, assessCompliance, encodeDatasetToSeed } from './utils/logic';
@@ -6,6 +6,20 @@ import { SampleRow, AssessmentResult, QCVNStandard } from './types';
 import DataEditor from './components/DataEditor';
 import Dashboard from './components/Dashboard';
 import RegulationManager from './components/RegulationManager';
+import { checkRHealth } from './services/r-sidecar';
+import { exportAsHTML, exportAsCSV, ReportData } from './services/report-export';
+
+// Lazy load heavy components for better initial load time
+const Forecast = lazy(() => import('./components/Forecast'));
+const GISMap = lazy(() => import('./components/GISMap'));
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center h-full">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+    <span className="ml-3 text-slate-500 dark:text-slate-400">Loading...</span>
+  </div>
+);
 
 // Icons
 const ChartBarIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>;
@@ -16,6 +30,9 @@ const SunIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" s
 const MenuIcon = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>;
 const ChevronLeftIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>;
 const SettingsIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
+const TrendingUpIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>;
+const MapIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>;
+const DocumentIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
 
 function App() {
   // --- State ---
@@ -26,10 +43,17 @@ function App() {
   const [seed, setSeed] = useState<string>("enviro-2024");
   const [randomizeSeed, setRandomizeSeed] = useState<boolean>(false);
   const [sampleCount, setSampleCount] = useState<number>(3);
-  const [activeTab, setActiveTab] = useState<'input' | 'analysis' | 'settings'>('input');
+  const [activeTab, setActiveTab] = useState<'input' | 'analysis' | 'forecast' | 'gis' | 'settings'>('input');
   
   // Dark mode state
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  
+  // R sidecar state
+  const [rStatus, setRStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
+  const [rVersion, setRVersion] = useState<string | null>(null);
+  
+  // Report generation state
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   
   const [data, setData] = useState<SampleRow[]>([]);
   const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
@@ -64,6 +88,21 @@ function App() {
       }
     };
     loadRegs();
+  }, []);
+
+  // Check R sidecar availability
+  useEffect(() => {
+    const checkR = async () => {
+      try {
+        const health = await checkRHealth();
+        setRStatus('available');
+        setRVersion(health.r_version);
+      } catch (error) {
+        console.warn("R sidecar not available:", error);
+        setRStatus('unavailable');
+      }
+    };
+    checkR();
   }, []);
 
   // --- Handlers ---
@@ -144,6 +183,76 @@ function App() {
     setRegulations(importedRegs);
     if (importedRegs.length > 0) {
       setSelectedStandardId(importedRegs[0].id);
+    }
+  };
+
+  // Generate compliance report (HTML)
+  const handleGenerateReport = async () => {
+    if (!selectedStandard || assessmentResults.length === 0) {
+      alert('Please generate data and run assessment first.');
+      return;
+    }
+    
+    setIsGeneratingReport(true);
+    try {
+      const passCount = assessmentResults.filter(r => r.status === 'Pass').length;
+      const warningCount = assessmentResults.filter(r => r.status === 'Warning').length;
+      const failCount = assessmentResults.filter(r => r.status === 'Fail').length;
+      
+      const reportData: ReportData = {
+        title: 'Environmental Compliance Assessment Report',
+        regulation: selectedStandard,
+        date: new Date().toISOString().split('T')[0],
+        results: assessmentResults,
+        summary: {
+          total: assessmentResults.length,
+          pass: passCount,
+          warning: warningCount,
+          fail: failCount,
+        },
+      };
+      
+      // Export as HTML file
+      const filePath = await exportAsHTML(reportData);
+      
+      // Show instructions popup
+      alert(`✅ Report saved to Downloads folder!\n\n📄 To save as PDF:\n1. Open the HTML file in browser\n2. Press Ctrl+P (or Cmd+P on Mac)\n3. Select "Save as PDF" or "Microsoft Print to PDF"\n4. Click Save\n\nFile: ${filePath}`);
+    } catch (error) {
+      alert(`Error generating report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  // Export as CSV
+  const handleExportCSV = async () => {
+    if (!selectedStandard || assessmentResults.length === 0) {
+      alert('Please generate data and run assessment first.');
+      return;
+    }
+    
+    const passCount = assessmentResults.filter(r => r.status === 'Pass').length;
+    const warningCount = assessmentResults.filter(r => r.status === 'Warning').length;
+    const failCount = assessmentResults.filter(r => r.status === 'Fail').length;
+    
+    const reportData: ReportData = {
+      title: 'Environmental Compliance Assessment Report',
+      regulation: selectedStandard,
+      date: new Date().toISOString().split('T')[0],
+      results: assessmentResults,
+      summary: {
+        total: assessmentResults.length,
+        pass: passCount,
+        warning: warningCount,
+        fail: failCount,
+      },
+    };
+    
+    try {
+      const filePath = await exportAsCSV(reportData);
+      alert(`CSV report saved to: ${filePath}`);
+    } catch (error) {
+      alert(`Error exporting CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -314,13 +423,29 @@ function App() {
                   onClick={() => setActiveTab('input')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'input' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
               >
-                <TableIcon /> Data Input
+                <TableIcon /> Data
               </button>
               <button 
                 onClick={() => setActiveTab('analysis')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'analysis' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
               >
-                <ChartBarIcon /> Analysis Report
+                <ChartBarIcon /> Analysis
+              </button>
+              <button 
+                onClick={() => setActiveTab('forecast')}
+                disabled={rStatus !== 'available'}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'forecast' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={rStatus !== 'available' ? 'R is not available' : 'Time Series Forecasting'}
+              >
+                <TrendingUpIcon /> Forecast
+              </button>
+              <button 
+                onClick={() => setActiveTab('gis')}
+                disabled={rStatus !== 'available'}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'gis' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={rStatus !== 'available' ? 'R is not available' : 'GIS & Spatial Analysis'}
+              >
+                <MapIcon /> GIS
               </button>
               <button 
                 onClick={() => setActiveTab('settings')}
@@ -332,6 +457,42 @@ function App() {
             </div>
 
             <div className="flex items-center gap-3">
+               {/* R Status Indicator */}
+               <div className={`flex items-center gap-2 text-xs font-medium px-2 py-1 rounded border ${
+                 rStatus === 'available' 
+                   ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                   : rStatus === 'unavailable'
+                   ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800'
+                   : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-700'
+               }`}>
+                 <span className={`w-2 h-2 rounded-full ${
+                   rStatus === 'available' ? 'bg-emerald-500' : 
+                   rStatus === 'unavailable' ? 'bg-rose-500' : 'bg-slate-400 animate-pulse'
+                 }`}></span>
+                 {rStatus === 'available' ? `R ${rVersion}` : rStatus === 'unavailable' ? 'R N/A' : 'Checking...'}
+               </div>
+
+               {/* Export Buttons */}
+               {assessmentResults.length > 0 && (
+                 <div className="flex items-center gap-1">
+                   <button
+                     onClick={handleGenerateReport}
+                     disabled={isGeneratingReport}
+                     className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-sky-500 hover:bg-sky-600 disabled:bg-slate-400 text-white rounded transition-colors"
+                     title="Download HTML Report (can save as PDF)"
+                   >
+                     <DocumentIcon /> {isGeneratingReport ? '...' : 'Report'}
+                   </button>
+                   <button
+                     onClick={handleExportCSV}
+                     className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded transition-colors"
+                     title="Export as CSV"
+                   >
+                     <DocumentIcon /> CSV
+                   </button>
+                 </div>
+               )}
+
                <span className="text-xs font-medium text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded border border-slate-100 dark:border-slate-700">
                  Auto-save enabled
                </span>
@@ -388,6 +549,41 @@ function App() {
                    onImport={handleImportRegulations}
                    isDarkMode={isDarkMode}
                  />
+               </div>
+            </div>
+          )}
+          {activeTab === 'forecast' && (
+            <div className="h-full flex flex-col animate-in fade-in duration-300">
+               <div className="mb-4">
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Time Series Forecasting</h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">
+                     Predict future values using ARIMA models. Select a parameter and forecast periods.
+                   </p>
+                </div>
+               <div className="flex-1 min-h-0">
+                 <Suspense fallback={<LoadingFallback />}>
+                   <Forecast 
+                     data={data}
+                     results={assessmentResults}
+                     sampleColumns={sampleColumns}
+                     isDarkMode={isDarkMode}
+                   />
+                 </Suspense>
+               </div>
+            </div>
+          )}
+          {activeTab === 'gis' && (
+            <div className="h-full flex flex-col animate-in fade-in duration-300">
+               <div className="mb-4">
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Geospatial Analysis (GIS)</h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">
+                     Kriging interpolation for spatial data. Add sample points and generate heatmaps.
+                   </p>
+                </div>
+               <div className="flex-1 min-h-0">
+                 <Suspense fallback={<LoadingFallback />}>
+                   <GISMap isDarkMode={isDarkMode} />
+                 </Suspense>
                </div>
             </div>
           )}

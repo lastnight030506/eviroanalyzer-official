@@ -1,0 +1,27 @@
+# compliance-engine
+
+## Functionality
+The core compliance assessment engine for Vietnamese environmental regulations (QCVN standards). Evaluates measured water/air/soil quality parameter values against regulatory limits and produces Pass/Warning/Fail verdicts with statistical summaries.
+
+## Tasks
+- Assess each parameter against its regulatory limit using `assessCompliance()` (supports both "max" and "min" limit types)
+- Calculate statistics: mean, max, percentOfLimit per parameter
+- Apply configurable safety margins (default 80%) for Warning thresholds
+- Generate seed-based mock/demo data via `generateMockData()` with deterministic PRNG
+- Encode/decode datasets to compact Base94 strings for URL sharing (`encodeDatasetToSeed` / `decodeSeedToValues`)
+- Aggregate compliance stats (pass/warning/fail counts) via `getComplianceStats()`
+
+## Purpose
+This is the **heart of EnviroAnalyzer** — all visualization, reporting, and forecasting modules depend on it. Without reliable compliance logic, the entire app is meaningless. It enforces the business rules for QCVN 08-MT:2015, QCVN 14:2008, and QCVN 05:2013 standards.
+
+## General Roadmap
+- Currently pure TypeScript logic in `utils/logic.ts` with types in `types.ts` and standards in `constants.ts`
+- Future: migrate heavy statistical calculations to R sidecar for advanced analysis
+- Maintain 100% unit test coverage via `utils/logic.test.ts`
+- Support additional QCVN standards (Soil, Industrial Wastewater) as user-defined regulations
+
+## Key Files
+- `utils/logic.ts` — Core assessment functions
+- `utils/logic.test.ts` — Unit tests
+- `types.ts` — `SampleRow`, `AssessmentResult`, `QCVNStandard`, `ComplianceStatus`
+- `constants.ts` — Built-in QCVN standards and color constants

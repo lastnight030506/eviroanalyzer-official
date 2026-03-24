@@ -1,0 +1,28 @@
+# r-sidecar
+
+## Functionality
+The R process execution bridge that connects the React/TypeScript frontend to R scripts running as a sidecar process via Tauri's shell plugin. Handles IPC (Inter-Process Communication) using JSON over stdin/stdout.
+
+## Tasks
+- Execute R scripts via Tauri's `invoke("run_r_script")` Rust command
+- Parse JSON output from R scripts into typed TypeScript objects (`runRScript<T>()`)
+- Handle raw text output for non-JSON R responses (`runRScriptRaw()`)
+- Perform R health checks to verify R installation (`checkRHealth()`, `isRAvailable()`)
+- Auto-detect R installation path on Windows (`C:\Program Files\R\R-x.x.x`)
+- Manage error propagation from R scripts to the frontend
+
+## Purpose
+This is the **critical infrastructure bridge** between the TypeScript frontend and R's statistical computing power. Without it, forecasting, GIS, and report generation modules cannot function. It abstracts away the complexity of spawning R processes and parsing their output.
+
+## General Roadmap
+- TypeScript client: `services/r-sidecar.ts` (~2KB) — clean API surface
+- Rust backend: `src-tauri/src/lib.rs` (~6.9KB) — process spawning and IPC
+- R health check: `src-tauri/scripts/health_check.R` (~0.9KB) — verifies R + packages
+- IPC protocol: JSON in via `commandArgs()`, JSON out via `cat(toJSON())`
+- Future: connection pooling for concurrent R script execution
+- Future: R process lifecycle management (keep-alive for faster repeated calls)
+
+## Key Files
+- `services/r-sidecar.ts` — TypeScript API (`runRScript`, `runRScriptRaw`, `checkRHealth`, `isRAvailable`)
+- `src-tauri/src/lib.rs` — Rust Tauri command `run_r_script`
+- `src-tauri/scripts/health_check.R` — R availability and package verification

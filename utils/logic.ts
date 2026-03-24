@@ -251,14 +251,14 @@ export const assessCompliance = (
     let percent = 0;
 
     if (row.type === 'max') {
-        percent = (criticalVal / limit) * 100;
+        percent = limit !== 0 ? (criticalVal / limit) * 100 : 0;
         if (criticalVal > limit) {
             status = "Fail";
         } else if (criticalVal >= limit * safetyMargin) {
             status = "Warning";
         }
     } else {
-        percent = (limit / criticalVal) * 100;
+        percent = criticalVal !== 0 ? (limit / criticalVal) * 100 : 0;
         if (criticalVal < limit) {
             status = "Fail";
         } else if (criticalVal <= limit * (1 + (1 - safetyMargin))) {

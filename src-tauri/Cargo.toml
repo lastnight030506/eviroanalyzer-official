@@ -1,10 +1,10 @@
 [package]
-name = "enviroanalyzer-pro"
-version = "1.0.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "app"
+version = "0.1.0"
+description = "EnviroAnalyzer Pro - Environmental Compliance Assessment Tool"
+authors = ["EnviroAnalyzer Team"]
+license = "MIT"
+repository = "https://github.com/enviroanalyzer/enviroanalyzer-pro"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -24,10 +24,12 @@ log = "0.4"
 tauri = { version = "2.10.0", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-shell = "2.3.5"
+tauri-plugin-updater = "2"
 
 [profile.release]
-panic = "abort" 
+panic = "abort"
 codegen-units = 1
 lto = true
-opt-level = "s" # Tối ưu cho kích thước
-strip = true    # Xóa bỏ debug symbols
+opt-level = "s"
+strip = true

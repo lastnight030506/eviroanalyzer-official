@@ -1,0 +1,28 @@
+# regulation-manager
+
+## Functionality
+Full CRUD management interface for QCVN environmental regulations. Allows users to create custom standards, edit parameters, import/export as JSON, and persist to the local filesystem via Tauri's FS plugin.
+
+## Tasks
+- List all available regulations (built-in + custom)
+- Create new custom QCVN regulation with parameters (name, unit, limit, type)
+- Edit existing regulation parameters
+- Delete custom regulations
+- Import regulations from JSON files
+- Export regulations to JSON files
+- Persist custom regulations to `AppData/regulations.json` via Tauri FS
+- Reset to default built-in QCVN standards (QCVN 08-MT:2015, QCVN 14:2008, QCVN 05:2013)
+
+## Purpose
+Different environmental monitoring scenarios require different regulatory standards. This module gives users the **flexibility to define custom regulations** for specific water bodies, industrial discharge permits, or regional requirements beyond the 3 built-in QCVN standards.
+
+## General Roadmap
+- Currently `components/RegulationManager.tsx` (~31KB — the largest component) + `services/regulations.ts` (~4.7KB)
+- Future: regulation templates for common scenarios
+- Future: regulation versioning (track changes over time)
+- Future: share regulations between team members
+
+## Key Files
+- `components/RegulationManager.tsx` — Full CRUD UI
+- `services/regulations.ts` — Persistence and file I/O logic
+- `constants.ts` — Built-in default QCVN standards

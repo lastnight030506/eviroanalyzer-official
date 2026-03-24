@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QCVNStandard, QCVNParameter } from '../types';
 import { exportRegulationsToJson, importRegulationsFromJson } from '../services/regulations';
+import { checkForUpdates, downloadAndInstallUpdate, relaunchApp, UpdateStatus } from '../services/updater';
 
 interface Props {
   regulations: QCVNStandard[];
@@ -21,6 +22,10 @@ const RefreshIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 2
 const XIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 const ChevronDownIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
 const ChevronUpIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>;
+const UpdateIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
+const CheckCircleIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const ExclamationIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
+const SpinnerIcon = () => <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>;
 
 const generateId = (): string => {
   return `reg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -40,6 +45,50 @@ const RegulationManager: React.FC<Props> = ({
   const [expandedRegId, setExpandedRegId] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  
+  // Auto-update states
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const handleCheckUpdate = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateError(null);
+    try {
+      const status = await checkForUpdates();
+      setUpdateStatus(status);
+      if (status.error) {
+        setUpdateError(status.error);
+      }
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to check for updates');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setUpdateError(null);
+    try {
+      const success = await downloadAndInstallUpdate((downloaded, total) => {
+        const progress = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+        setDownloadProgress(progress);
+      });
+      if (success) {
+        // Will restart automatically
+      } else {
+        setUpdateError('Download failed. Please try again.');
+      }
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to download update');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const handleAddNew = () => {
     const newReg: QCVNStandard = {
@@ -58,7 +107,7 @@ const RegulationManager: React.FC<Props> = ({
     setIsEditing(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editingReg) return;
     
     if (editingReg.name.trim() === "") {
@@ -66,14 +115,19 @@ const RegulationManager: React.FC<Props> = ({
       return;
     }
 
-    const existingReg = regulations.find(r => r.id === editingReg.id);
-    if (existingReg) {
-      onUpdate(editingReg);
-    } else {
-      onAdd(editingReg);
+    try {
+      const existingReg = regulations.find(r => r.id === editingReg.id);
+      if (existingReg) {
+        await onUpdate(editingReg);
+      } else {
+        await onAdd(editingReg);
+      }
+      setIsEditing(false);
+      setEditingReg(null);
+    } catch (error) {
+      console.error('Failed to save regulation:', error);
+      alert(`Failed to save regulation: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-    setIsEditing(false);
-    setEditingReg(null);
   };
 
   const handleCancel = () => {
@@ -480,6 +534,114 @@ const RegulationManager: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* Software Updates Section */}
+      <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+          <UpdateIcon />
+          Software Updates
+        </h3>
+        
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Current Version</p>
+              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">v1.0.0</p>
+            </div>
+            <button
+              onClick={handleCheckUpdate}
+              disabled={isCheckingUpdate || isDownloading}
+              className="flex items-center gap-2 px-4 py-2 bg-sky-500 hover:bg-sky-600 disabled:bg-slate-400 text-white rounded-lg transition-colors"
+            >
+              {isCheckingUpdate ? (
+                <>
+                  <SpinnerIcon />
+                  Checking...
+                </>
+              ) : (
+                <>
+                  <RefreshIcon />
+                  Check for Updates
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Update Status Display */}
+          {updateStatus && !updateStatus.available && !updateError && (
+            <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+              <CheckCircleIcon />
+              <div>
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">You're up to date!</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-500">EnviroAnalyzer Pro is running the latest version.</p>
+              </div>
+            </div>
+          )}
+
+          {updateStatus?.available && updateStatus.info && (
+            <div className="p-4 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="text-sm font-medium text-sky-700 dark:text-sky-400">
+                    New Version Available: v{updateStatus.info.version}
+                  </p>
+                  <p className="text-xs text-sky-600 dark:text-sky-500 mt-1">
+                    Released: {new Date(updateStatus.info.date).toLocaleDateString()}
+                  </p>
+                </div>
+                <span className="px-2 py-1 text-xs font-medium bg-sky-500 text-white rounded">NEW</span>
+              </div>
+              
+              {updateStatus.info.body && (
+                <div className="mb-4 p-3 bg-white dark:bg-slate-800 rounded border border-sky-100 dark:border-sky-900">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Release Notes:</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                    {updateStatus.info.body}
+                  </p>
+                </div>
+              )}
+
+              {isDownloading ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                    <span>Downloading update...</span>
+                    <span>{downloadProgress}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-sky-500 transition-all duration-300"
+                      style={{ width: `${downloadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleDownloadUpdate}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
+                >
+                  <DownloadIcon />
+                  Download & Install Update
+                </button>
+              )}
+            </div>
+          )}
+
+          {updateError && (
+            <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <ExclamationIcon />
+              <div>
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Update Check Failed</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500">{updateError}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <p>Updates are downloaded from GitHub Releases. Auto-update is available in production builds.</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };

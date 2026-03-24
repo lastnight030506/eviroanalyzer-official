@@ -1,0 +1,23 @@
+# data-editor
+
+## Functionality
+An interactive, editable spreadsheet-like data matrix component where users input environmental sample measurements. Supports dynamic columns for multiple samples per parameter, real-time editing, and validation.
+
+## Tasks
+- Render editable grid of parameters × sample columns
+- Allow adding/removing sample columns dynamically
+- Validate numeric input (reject non-numeric values)
+- Sync edited values with parent state for compliance assessment
+- Display parameter metadata (name, unit, limit, type) as read-only columns
+
+## Purpose
+Provides the **primary data entry point** for the entire application. All downstream features (Dashboard, Forecasting, Reporting) depend on the data entered here. A clean, intuitive editing experience is critical for environmental engineers who use this daily.
+
+## General Roadmap
+- Currently `components/DataEditor.tsx` (~4.6KB)
+- Future: CSV/Excel import directly into the editor
+- Future: cell-level validation highlighting (red for out-of-range values)
+- Future: bulk paste from clipboard support
+
+## Key Files
+- `components/DataEditor.tsx` — DataEditor component

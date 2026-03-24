@@ -1,0 +1,26 @@
+# r-shiny-filter
+
+## Functionality
+A standalone R Shiny web application for interactive environmental data filtering and analysis. Provides a browser-based UI for loading, filtering, and exploring environmental measurement datasets with reactive data tables and visualizations.
+
+## Tasks
+- Load environmental data from CSV files (`sample_data.csv` or user uploads)
+- Provide interactive data filtering controls (by parameter, date range, location, etc.)
+- Display filtered results in reactive data tables
+- Generate summary statistics and visualizations for filtered subsets
+- Export filtered data
+
+## Purpose
+Serves as a **standalone companion tool** to the main Tauri desktop app. While the desktop app handles compliance assessment, this R Shiny module provides advanced, R-native data exploration and filtering for environmental scientists who prefer browser-based workflows. Also useful when the desktop app is not installed.
+
+## General Roadmap
+- Currently `r-shiny-filter/app.R` (~27KB) — a self-contained Shiny app
+- `install_packages.R` handles dependency installation
+- `sample_data.csv` provides demo data
+- Future: integrate as a tab within the main Tauri app via embedded webview
+- Future: bidirectional data sync with the main app
+
+## Key Files
+- `r-shiny-filter/app.R` — Main Shiny application
+- `r-shiny-filter/install_packages.R` — R package installer
+- `r-shiny-filter/sample_data.csv` — Sample dataset

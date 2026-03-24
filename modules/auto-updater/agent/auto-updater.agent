@@ -1,0 +1,26 @@
+# auto-updater
+
+## Functionality
+Automatic update service using Tauri's built-in updater plugin. Checks for new versions on startup, downloads updates with progress tracking, and relaunches the application after installation.
+
+## Tasks
+- Check for available updates via `checkForUpdates()` (production builds only)
+- Display update information: new version, release notes, date
+- Download updates with progress callback (`downloadAndInstallUpdate()`)
+- Relaunch application post-update via `relaunchApp()`
+- Gracefully degrade in dev mode (returns informative message instead of erroring)
+- Lazy-load updater and process plugins to handle dev/prod environments
+
+## Purpose
+Ensures users always have the **latest version** with bug fixes, new QCVN standards, and improved features. Critical for a desktop application where manual updates create friction and lead to outdated software running in production environments.
+
+## General Roadmap
+- Currently `services/updater.ts` (~3.9KB) — complete auto-update lifecycle
+- Uses `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process`
+- Dynamic imports prevent crashes in dev mode or browser context
+- Future: automatic silent background updates
+- Future: update channels (stable/beta)
+- CI/CD: GitHub Actions workflow produces signed NSIS/AppImage/DMG installers
+
+## Key Files
+- `services/updater.ts` — Update check, download, install, and relaunch logic

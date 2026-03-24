@@ -1,0 +1,26 @@
+# report-export
+
+## Functionality
+Generates professional compliance reports in PDF and DOCX formats. Uses a hybrid approach: TypeScript service for data preparation + R script for document rendering via R Markdown templates. Also supports client-side PDF generation via jsPDF as a fallback.
+
+## Tasks
+- Format assessment results into structured report data
+- Generate PDF reports via R Markdown (`generate_report.R`)
+- Generate DOCX reports via R Markdown (`generate_report.R`)
+- Include compliance tables, summary statistics, and status indicators
+- Client-side PDF generation via `jspdf` + `jspdf-autotable` as fallback
+- Provide download triggers from the UI header "Export" buttons
+
+## Purpose
+Environmental compliance reports are **legal and regulatory documents**. This module produces professional, printable reports that environmental engineers can submit to regulators, attach to permit applications, or archive for compliance records.
+
+## General Roadmap
+- Currently `services/report-export.ts` (~13KB) for TS logic + `generate_report.R` for R-based rendering
+- Supports two generation paths: R Markdown (requires R) and pure JS (jsPDF fallback)
+- Future: custom report templates
+- Future: branded reports with company logo/headers
+
+## Key Files
+- `services/report-export.ts` — Report data prep and jsPDF fallback
+- `src-tauri/scripts/generate_report.R` — R Markdown report generation (PDF/DOCX)
+- `services/analytics.ts` — `ReportInput`, `ReportResult` types + `generateReport()` function

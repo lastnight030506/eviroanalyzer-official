@@ -1,8 +1,23 @@
-import { BaseDirectory, readTextFile, writeTextFile, exists } from "@tauri-apps/plugin-fs";
+import { BaseDirectory, readTextFile, writeTextFile, exists, mkdir } from "@tauri-apps/plugin-fs";
 import { QCVNStandard } from "../types";
 import { STANDARDS } from "../constants";
 
 const REGULATIONS_FILE = "regulations.json";
+
+/**
+ * Ensure AppData directory exists
+ */
+async function ensureAppDataDir(): Promise<void> {
+  try {
+    const dirExists = await exists("", { baseDir: BaseDirectory.AppData });
+    if (!dirExists) {
+      await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true });
+    }
+  } catch (error) {
+    console.log("AppData directory check:", error);
+    // Directory might already exist, continue
+  }
+}
 
 /**
  * Load regulations from the JSON file.
@@ -11,6 +26,8 @@ const REGULATIONS_FILE = "regulations.json";
  */
 export async function loadRegulations(): Promise<QCVNStandard[]> {
   try {
+    await ensureAppDataDir();
+    
     const fileExists = await exists(REGULATIONS_FILE, {
       baseDir: BaseDirectory.AppData,
     });
@@ -47,6 +64,7 @@ export async function loadRegulations(): Promise<QCVNStandard[]> {
  */
 export async function saveRegulations(regulations: QCVNStandard[]): Promise<void> {
   try {
+    await ensureAppDataDir();
     const content = JSON.stringify(regulations, null, 2);
     await writeTextFile(REGULATIONS_FILE, content, {
       baseDir: BaseDirectory.AppData,

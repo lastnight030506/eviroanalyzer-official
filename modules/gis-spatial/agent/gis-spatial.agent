@@ -1,0 +1,28 @@
+# gis-spatial
+
+## Functionality
+Geospatial Intelligence (GIS) module that performs Kriging interpolation on environmental measurements at specific geographic coordinates. Renders interpolation results on interactive Leaflet maps with color-coded heatmap layers.
+
+## Tasks
+- Accept coordinate input pairs (lat/lng) with associated parameter values
+- Execute Kriging spatial interpolation via R `gstat` package (`kriging.R`)
+- Render Leaflet.js interactive maps with sample point markers
+- Display interpolation grid as a color-scaled overlay
+- Show variogram model parameters (nugget, sill, range)
+- Display spatial statistics (min, max, mean, standard deviation)
+- Support configurable grid density
+
+## Purpose
+Environmental pollution is inherently spatial — contamination spreads through water bodies and air masses. This module enables **spatial analysis and visualization** to understand the geographic distribution of pollutants, identify hotspots, and interpolate values at unsampled locations.
+
+## General Roadmap
+- Currently `components/GISMap.tsx` (~16KB) for map UI, `kriging.R` for computation
+- Depends on `r-sidecar` module for R execution
+- Uses `react-leaflet` + `leaflet` for map rendering
+- Future: support multiple parameters on the same map
+- Future: temporal-spatial analysis (pollution movement over time)
+
+## Key Files
+- `components/GISMap.tsx` — Leaflet map component and UI
+- `src-tauri/scripts/kriging.R` — Kriging interpolation via R `gstat` + `sp` packages
+- `services/analytics.ts` — `KrigingInput`, `KrigingResult`, `KrigingGridPoint` types + `runKriging()` function

@@ -1,0 +1,25 @@
+# dashboard
+
+## Functionality
+Compliance visualization dashboard that renders interactive charts and summary statistics from assessment results. Uses Recharts for bar, pie, and radar charts with dark mode support.
+
+## Tasks
+- Render summary cards: Total parameters, Pass count, Warning count, Fail count
+- Display Bar Chart: Compliance Overview showing each parameter's % of Limit
+- Display Pie Chart: Status distribution (Pass/Warning/Fail proportions)
+- Display Radar Chart: Multi-parameter comparison against limits
+- Support dark mode theme toggle (color-aware chart rendering)
+- Responsive layout via `ResponsiveContainer` with debounce
+
+## Purpose
+Transforms raw compliance data into **actionable visual insights** at a glance. Environmental managers need quick, visual confirmation of which parameters are within regulatory limits. This is the first thing users see after running an assessment.
+
+## General Roadmap
+- Currently `components/Dashboard.tsx` (~9.9KB) with `services/analytics.ts` for data prep
+- Future: drill-down click interaction (click chart element → show sample details)
+- Future: export charts as PNG/SVG for reports
+- Performance optimized with `isAnimationActive={false}` where needed
+
+## Key Files
+- `components/Dashboard.tsx` — Chart components and layout
+- `services/analytics.ts` — Analytics data types and R integration

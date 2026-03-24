@@ -1,0 +1,29 @@
+# forecasting
+
+## Functionality
+Time series environmental forecasting using ARIMA and Prophet models. Executes R scripts via the Tauri sidecar to predict future parameter values with confidence intervals. Visualizes historical + forecasted data with interactive charts.
+
+## Tasks
+- Accept time series data (historical parameter measurements + optional dates)
+- Run ARIMA forecasting via `forecast_arima.R` (R `forecast` package)
+- Run Prophet forecasting via `forecast_prophet.R`
+- Display forecast results: predicted values, lower/upper confidence bounds
+- Show model accuracy metrics: MAE, RMSE, MAPE (ARIMA)
+- Visualize historical vs. predicted values with confidence interval bands
+- Export forecast data as table
+
+## Purpose
+Environmental monitoring is not just about current compliance — it's about **predicting future trends**. This module helps environmental managers anticipate when parameters may exceed limits, enabling proactive interventions before violations occur.
+
+## General Roadmap
+- Currently `components/Forecast.tsx` (~15KB) for UI, R scripts for computation
+- Depends on `r-sidecar` module for R execution
+- Future: seasonal decomposition visualization
+- Future: multi-parameter simultaneous forecasting
+- Future: anomaly detection integration
+
+## Key Files
+- `components/Forecast.tsx` — Forecasting UI and chart visualization
+- `src-tauri/scripts/forecast_arima.R` — ARIMA model execution
+- `src-tauri/scripts/forecast_prophet.R` — Prophet model execution
+- `services/analytics.ts` — `ForecastInput`, `ARIMAResult`, `ProphetResult` types + `forecastARIMA()`, `forecastProphet()` functions
