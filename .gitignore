@@ -35,7 +35,6 @@ temp_bin/
 *.tmp
 *.temp
 
-# Lock files (keep package.json only)
-package-lock.json
+# Lock files (keep npm lockfile, ignore others)
 pnpm-lock.yaml
 yarn.lock
