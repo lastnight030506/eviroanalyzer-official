@@ -12,6 +12,7 @@ import { exportAsHTML, exportAsCSV, ReportData } from './services/report-export'
 // Lazy load heavy components for better initial load time
 const Forecast = lazy(() => import('./components/Forecast'));
 const GISMap = lazy(() => import('./components/GISMap'));
+const Statistics = lazy(() => import('./components/Statistics'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -43,7 +44,7 @@ function App() {
   const [seed, setSeed] = useState<string>("enviro-2024");
   const [randomizeSeed, setRandomizeSeed] = useState<boolean>(false);
   const [sampleCount, setSampleCount] = useState<number>(3);
-  const [activeTab, setActiveTab] = useState<'input' | 'analysis' | 'forecast' | 'gis' | 'settings'>('input');
+  const [activeTab, setActiveTab] = useState<'input' | 'analysis' | 'forecast' | 'gis' | 'settings' | 'statistics'>('input');
   
   // Dark mode state
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
@@ -447,11 +448,19 @@ function App() {
               >
                 <MapIcon /> GIS
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('settings')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
               >
                 <SettingsIcon /> Settings
+              </button>
+              <button
+                onClick={() => setActiveTab('statistics')}
+                disabled={rStatus !== 'available'}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'statistics' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={rStatus !== 'available' ? 'R is not available' : 'SPSS-style Statistics'}
+              >
+                <ChartBarIcon /> Statistics
               </button>
             </div>
             </div>
@@ -549,6 +558,21 @@ function App() {
                    onImport={handleImportRegulations}
                    isDarkMode={isDarkMode}
                  />
+               </div>
+            </div>
+          )}
+          {activeTab === 'statistics' && (
+            <div className="h-full flex flex-col animate-in fade-in duration-300">
+               <div className="mb-4">
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">SPSS-Style Statistics</h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">
+                     Descriptive statistics, t-tests, ANOVA, correlation, regression, and visualizations.
+                   </p>
+                </div>
+               <div className="flex-1 min-h-0">
+                 <Suspense fallback={<LoadingFallback />}>
+                   <Statistics isDarkMode={isDarkMode} />
+                 </Suspense>
                </div>
             </div>
           )}
