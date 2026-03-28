@@ -4,6 +4,7 @@ import { loadRegulations, saveRegulations, addRegulation, updateRegulation, dele
 import { generateMockData, assessCompliance, encodeDatasetToSeed } from './utils/logic';
 import { SampleRow, AssessmentResult, QCVNStandard } from './types';
 import DataEditor from './components/DataEditor';
+import DataImporter from './components/DataImporter';
 import Dashboard from './components/Dashboard';
 import RegulationManager from './components/RegulationManager';
 import { checkRHealth } from './services/r-sidecar';
@@ -45,7 +46,8 @@ function App() {
   const [randomizeSeed, setRandomizeSeed] = useState<boolean>(false);
   const [sampleCount, setSampleCount] = useState<number>(3);
   const [activeTab, setActiveTab] = useState<'input' | 'analysis' | 'forecast' | 'gis' | 'settings' | 'statistics'>('input');
-  
+  const [inputMode, setInputMode] = useState<'edit' | 'import'>('edit');
+
   // Dark mode state
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   
@@ -137,8 +139,20 @@ function App() {
   const handleDataChange = (newData: SampleRow[]) => {
     setData(newData);
     runAssessment(newData);
-    
+
     const newSeed = encodeDatasetToSeed(newData, sampleCount);
+    if (newSeed) {
+      setSeed(newSeed);
+    }
+  };
+
+  const handleDataImported = (importedData: SampleRow[], sampleColumns: string[]) => {
+    setData(importedData);
+    setSampleCount(sampleColumns.length);
+    runAssessment(importedData);
+
+    // Generate seed from imported data
+    const newSeed = encodeDatasetToSeed(importedData, sampleColumns.length);
     if (newSeed) {
       setSeed(newSeed);
     }
@@ -514,16 +528,54 @@ function App() {
             <div className="h-full flex flex-col animate-in fade-in duration-300">
               <div className="mb-4 flex justify-between items-end">
                 <div>
-                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Raw Data Matrix</h2>
-                   <p className="text-sm text-slate-500 dark:text-slate-400">Edit values directly in the grid. Compliance is calculated automatically.</p>
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                     {inputMode === 'edit' ? 'Raw Data Matrix' : 'Import Data'}
+                   </h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">
+                     {inputMode === 'edit'
+                       ? 'Edit values directly in the grid. Compliance is calculated automatically.'
+                       : 'Import data from CSV, Excel, or SPSS files. Data will be mapped to QCVN parameters.'}
+                   </p>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex bg-slate-200 dark:bg-slate-700 rounded-lg p-1">
+                    <button
+                      onClick={() => setInputMode('edit')}
+                      className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                        inputMode === 'edit'
+                          ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setInputMode('import')}
+                      className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                        inputMode === 'import'
+                          ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Import
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="flex-1 min-h-0">
-                <DataEditor 
-                  data={data} 
-                  sampleColumns={sampleColumns} 
-                  onDataChange={handleDataChange} 
-                />
+                {inputMode === 'edit' ? (
+                  <DataEditor
+                    data={data}
+                    sampleColumns={sampleColumns}
+                    onDataChange={handleDataChange}
+                  />
+                ) : (
+                  <DataImporter
+                    isDarkMode={isDarkMode}
+                    selectedStandard={selectedStandard}
+                    onDataImported={handleDataImported}
+                  />
+                )}
               </div>
             </div>
           )}

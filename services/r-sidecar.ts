@@ -14,8 +14,35 @@ interface RHealthResponse {
   packages?: Record<string, string>;
 }
 
+// Detect if we're running in Tauri context
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+
+// API server URL for localhost development
+const API_BASE = 'http://localhost:3001';
+
 /**
- * Execute an R script via Tauri sidecar.
+ * Execute R script via Tauri (desktop) or localhost server (browser)
+ */
+async function executeRScriptBackend(scriptName: string, args: string[]): Promise<RScriptResult> {
+  if (isTauri) {
+    // Use Tauri invoke for desktop app
+    return invoke<RScriptResult>("run_r_script", { scriptName, args });
+  } else {
+    // Use localhost API for browser dev
+    const response = await fetch(`${API_BASE}/api/rscript`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scriptName, args })
+    });
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+    return response.json();
+  }
+}
+
+/**
+ * Execute an R script via Tauri sidecar or localhost server.
  * @param scriptName Name of the R script (e.g., "health_check.R")
  * @param args Arguments to pass to the script
  * @returns Parsed JSON result from R script
@@ -24,10 +51,7 @@ export async function runRScript<T>(
   scriptName: string,
   args: string[] = []
 ): Promise<T> {
-  const result = await invoke<RScriptResult>("run_r_script", {
-    scriptName,
-    args,
-  });
+  const result = await executeRScriptBackend(scriptName, args);
 
   if (!result.success) {
     throw new Error(result.error || "R script execution failed");
@@ -50,10 +74,7 @@ export async function runRScriptRaw(
   scriptName: string,
   args: string[] = []
 ): Promise<string> {
-  const result = await invoke<RScriptResult>("run_r_script", {
-    scriptName,
-    args,
-  });
+  const result = await executeRScriptBackend(scriptName, args);
 
   if (!result.success) {
     throw new Error(result.error || "R script execution failed");
@@ -67,6 +88,14 @@ export async function runRScriptRaw(
  * @returns Health check response from R
  */
 export async function checkRHealth(): Promise<RHealthResponse> {
+  if (!isTauri) {
+    // Use localhost API for browser dev
+    const response = await fetch(`${API_BASE}/api/health`);
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+    return response.json();
+  }
   return runRScript<RHealthResponse>("health_check.R");
 }
 

@@ -22,6 +22,32 @@ npm test -- --run         # Run tests once (CI mode)
 npx tsc --noEmit          # TypeScript validation
 ```
 
+### Running as Localhost Web App (without Tauri desktop)
+
+The app can run as a localhost web app for development. This requires running a Node.js server that executes R scripts.
+
+```bash
+# Terminal 1: Start the R sidecar server (port 3001)
+npm run dev:server
+
+# Terminal 2: Start Vite dev server (port 3000)
+npm run dev
+
+# Or run both together:
+npm run dev:full
+```
+
+The server (`server.js`) is an Express server that:
+- Executes R scripts via `Rscript.exe`
+- Serves API at `http://localhost:3001`
+- Endpoints:
+  - `POST /api/rscript` - Execute R script
+  - `GET /api/health` - Health check
+
+### Requirements for localhost mode:
+- R must be installed (finds Rscript automatically on Windows)
+- Required R packages: jsonlite, haven, readr, readxl, dplyr, tidyr, janitor
+
 ## Architecture
 
 ### Stack
@@ -42,10 +68,14 @@ App.tsx (state root)
 ```
 
 ### R Sidecar Architecture
+- **ALL statistical/logical processing MUST use R** - never implement statistics in TypeScript/JavaScript
+- Architecture supports two modes:
+  1. **Desktop (Tauri)**: Uses Rust backend `invoke("run_r_script")`
+  2. **Browser (localhost)**: Uses `server.js` Express server at port 3001
+- The `services/r-sidecar.ts` auto-detects which mode to use based on whether `__TAURI__` is defined in window
 - Rust backend (`src-tauri/src/lib.rs`) executes R scripts via `run_r_script` command
-- Finds Rscript at `C:\Program Files\R\R-X\bin\Rscript.exe` on Windows
+- Rscript path: resolve via `where Rscript` or check common Windows paths (`C:\Program Files\R\R-*`)
 - R scripts live in `src-tauri/scripts/` directory
-- Service layer in `services/r-sidecar.ts` wraps Tauri invoke calls
 - Falls back to browser-native downloads if Tauri APIs unavailable
 
 ### Compliance Assessment Logic (`utils/logic.ts`)
@@ -63,6 +93,22 @@ App.tsx (state root)
 - QCVN 08-MT:2015 (Water - Irrigation)
 - QCVN 14:2008/BTNMT (Domestic Wastewater)
 - QCVN 05:2013/BTNMT (Air Quality)
+
+### Directory Structure
+```
+src/                    # React frontend
+  components/           # React components
+  services/             # API and external service wrappers
+  utils/                # Utility functions (logic.ts, helpers)
+  types.ts              # TypeScript type definitions
+src-tauri/              # Tauri/Rust backend
+  src/lib.rs            # Rust entry point
+  scripts/              # R scripts for statistical analysis
+```
+## Git Workflow
+- Commit style: `type: short description` (e.g., `feat: add Kriging analysis`, `fix: resolve merge conflicts`)
+- Branch: `master` is main branch
+- Always push commits before pulling to avoid losing work
 
 ## Code Conventions
 
@@ -96,29 +142,8 @@ const Component: React.FC<Props> = ({ prop1, prop2 }) => {
 - Always include `transition-colors` for theme changes
 - No custom CSS files — Tailwind only
 
-### Agent Workflow Rules
-
-#### Phase 1: Feature Decomposition & Documentation
-
-For every feature service, decompose it into smaller, manageable modules. Each module must include:
-
-- **`.agent` file**: Create a dedicated file named `[module_name].agent`
-- **Mandatory Content**:
-  - **Functionality**: Detailed description of what the module does
-  - **Tasks**: List of specific technical tasks the module handles
-  - **Purpose**: The "Why" behind this module and its value to the feature
-  - **General Roadmap**: High-level architectural direction and how it integrates with the overall feature
-
-#### Phase 2: Interactive Analysis Workflow
-
-Before execution, follow this communication protocol:
-
-1. **Prompt Analysis**: Deeply analyze the user's request to identify the specific feature involved
-2. **Confirmation Loop**: Ask clarifying questions to confirm the correct feature/module
-3. **Targeted Reading**: Once confirmed, read only:
-   - The relevant `.agent` files of those specific modules
-   - Associated `.md` documentation files for technical context
-   - Avoid scanning unrelated files to maintain focus and efficiency
+### Agent Workflow
+Use `.agent` files for feature decomposition: create `[module_name].agent` with Functionality, Tasks, Purpose, and General Roadmap sections.
 
 ### Patterns
 - **Type guards**: `filter((v): v is number => v !== null)`

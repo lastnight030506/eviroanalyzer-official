@@ -18,6 +18,7 @@ input <- fromJSON(args[1])
 
 file_path <- input$file_path
 file_type <- input$file_type
+return_data <- isTRUE(input$return_data)
 
 # Session storage - use global env to persist data
 session_id <- input$session_id
@@ -68,15 +69,47 @@ tryCatch({
     )
   })
 
+  # Convert data to list of rows for JSON
+  # as.list(data.frame) gives list of COLUMNS, not rows - fix this
+  data_preview <- lapply(seq_len(min(10, nrow(data))), function(i) {
+    row <- as.list(data[i, ])
+    # Convert any complex types to simple values
+    names(row) <- names(data)
+    row
+  })
+
   result <- list(
     success = TRUE,
     session_id = session_id,
     variables = var_info,
     row_count = nrow(data),
-    column_count = ncol(data)
+    column_count = ncol(data),
+    data_preview = data_preview
   )
 
-  cat(toJSON(result, auto_unbox = TRUE))
+  if (return_data) {
+    # Convert rows to list
+    result$data <- lapply(seq_len(nrow(data)), function(i) {
+      row <- as.list(data[i, ])
+      names(row) <- names(data)
+      row
+    })
+  }
+
+  # Save session data to temp file for other scripts to use
+  session_file <- paste0("C:/Users/OS/AppData/Local/Temp/enviroanalyzer_session_", gsub("[^a-zA-Z0-9]", "_", session_id), ".json")
+  tryCatch({
+    save_data <- lapply(seq_len(nrow(data)), function(i) {
+      row <- as.list(data[i, ])
+      names(row) <- names(data)
+      row
+    })
+    writeLines(toJSON(list(data = save_data, columns = names(data)), auto_unbox = TRUE), session_file)
+  }, error = function(e) {
+    # Silently fail - session file is optional
+  })
+
+  cat(toJSON(result, auto_unbox = TRUE, null = 'null'))
 
 }, error = function(e) {
   cat(toJSON(list(success = FALSE, error = as.character(e$message)), auto_unbox = TRUE))

@@ -32,7 +32,7 @@ const Statistics: React.FC<Props> = ({ isDarkMode }) => {
       </div>
       <div className="flex-1 overflow-auto p-4">
         <Suspense fallback={<div className="text-center py-8 text-slate-500">Loading...</div>}>
-          {activeSubTab === 'data' && <DataImporter isDarkMode={isDarkMode} onDataLoaded={() => setDataLoaded(true)} />}
+          {activeSubTab === 'data' && <DataImporter isDarkMode={isDarkMode} selectedStandard={null} onDataLoaded={() => setDataLoaded(true)} />}
           {activeSubTab === 'descriptives' && <DescriptivesPanel isDarkMode={isDarkMode} dataLoaded={dataLoaded} />}
           {activeSubTab === 'compare' && <CompareMeansPanel isDarkMode={isDarkMode} dataLoaded={dataLoaded} />}
           {activeSubTab === 'correlation' && <CorrelationPanel isDarkMode={isDarkMode} dataLoaded={dataLoaded} />}
