@@ -9,8 +9,8 @@ library(stringr)
 args <- commandArgs(trailingOnly = TRUE)
 input_json <- args[1]
 
-# Parse input
-input <- fromJSON(input_json)
+# Parse input - use simplifyDataFrame=FALSE to keep arrays as lists
+input <- fromJSON(input_json, simplifyDataFrame = FALSE)
 
 session_id <- input$session_id
 mappings <- input$mappings
@@ -20,12 +20,20 @@ qcvn_params <- input$qcvn_params
 # Data: can come from input$data, session file, or global env
 data <- NULL
 
-# Helper function to create data frame from list of rows using dplyr::bind_rows
+# Helper function to create data frame from list of rows
 create_df_from_rows <- function(row_list, col_names) {
-  # Use dplyr's bind_rows which handles this elegantly
-  df <- bind_rows(row_list)
-  # Ensure column order matches
-  df <- df[, col_names, drop = FALSE]
+  df <- NULL
+  for (r in row_list) {
+    vals <- unlist(r, use.names = TRUE)
+    vals <- vals[col_names]
+    row_df <- as.data.frame(t(vals), stringsAsFactors = FALSE, check.names = FALSE)
+    if (is.null(df)) {
+      df <- row_df
+    } else {
+      df <- rbind(df, row_df)
+    }
+  }
+  rownames(df) <- NULL
   df
 }
 
@@ -38,7 +46,7 @@ if (!is.null(input$data) && length(input$data) > 0) {
 if (is.null(data)) {
   session_file <- paste0("C:/Users/OS/AppData/Local/Temp/enviroanalyzer_session_", gsub("[^a-zA-Z0-9]", "_", session_id), ".json")
   if (file.exists(session_file)) {
-    session_data <- fromJSON(session_file)
+    session_data <- fromJSON(session_file, simplifyDataFrame = FALSE)
     data <- create_df_from_rows(session_data$data, session_data$columns)
   }
 }
@@ -49,12 +57,17 @@ if (is.null(data)) {
   data <- get(env_name, envir = .GlobalEnv)
 }
 
-# Identify sample columns (all columns except the first metadata column)
-# The first column is typically "parameter" or similar metadata
+# Convert factor columns to character
+for (col in colnames(data)) {
+  if (is.factor(data[[col]])) {
+    data[[col]] <- as.character(data[[col]])
+  }
+}
+
+# Identify sample columns
 all_cols <- colnames(data)
 sample_cols <- all_cols[-1]
 
-# Also filter to only columns matching sample_prefix pattern if specified
 if (!is.null(sample_prefix) && sample_prefix != "") {
   sample_cols <- grep(paste0("^", sample_prefix), sample_cols, value = TRUE, ignore.case = TRUE)
   if (length(sample_cols) == 0) {
@@ -62,27 +75,20 @@ if (!is.null(sample_prefix) && sample_prefix != "") {
   }
 }
 
-# Build qcvn_param lookup from qcvn_params
-qcvn_lookup <- setNames(lapply(seq_len(nrow(qcvn_params)), function(i) {
-  as.list(qcvn_params[i, ])
-}), qcvn_params$id)
+# Build qcvn_param lookup
+qcvn_lookup <- setNames(lapply(qcvn_params, function(p) as.list(p)), sapply(qcvn_params, function(p) p$id))
 
 # Process mappings
 mapped_rows <- list()
 unmapped_variables <- character()
 
-for (i in seq_len(nrow(mappings))) {
-  mapping <- mappings[i, ]
+for (i in seq_along(mappings)) {
+  mapping <- mappings[[i]]
   imported_var <- mapping$imported_var
   qcvn_param <- mapping$qcvn_param
   is_manual <- mapping$is_manual
 
-  # Check if this imported variable exists in data columns
-  if (!imported_var %in% all_cols) {
-    next
-  }
-
-  # If qcvn_param is null, add to unmapped_variables
+  # If qcvn_param is null/empty, add to unmapped
   if (is.null(qcvn_param) || is.na(qcvn_param) || qcvn_param == "") {
     unmapped_variables <- c(unmapped_variables, imported_var)
     next
@@ -90,6 +96,7 @@ for (i in seq_len(nrow(mappings))) {
 
   # Get the QCVN parameter definition
   if (!qcvn_param %in% names(qcvn_lookup)) {
+    unmapped_variables <- c(unmapped_variables, imported_var)
     next
   }
 
@@ -101,30 +108,36 @@ for (i in seq_len(nrow(mappings))) {
     parameterId = qcvn_param,
     parameterName = param_def$name,
     unit = param_def$unit,
-    limit = param_def$limit,
+    limit = as.numeric(param_def$limit),
     type = param_def$type
   )
 
-  # Add sample values - find the row using imported_var
-  for (col in sample_cols) {
-    # Find row where parameter column matches imported_var (case-insensitive)
-    idx <- which(tolower(data$parameter) == tolower(imported_var))
-    if (length(idx) > 0) {
-      val <- data[[col]][idx[1]]  # Take first match
-      sample_row[[col]] <- if (!is.na(val)) val else NA
-    } else {
-      sample_row[[col]] <- NA
-    }
+  # Add sample values - find the row where parameter matches imported_var
+  param_vals <- tolower(as.character(data$parameter))
+  search_term <- tolower(imported_var)
+  idx <- which(param_vals == search_term)
+
+  if (length(idx) == 0) {
+    # Try partial match
+    idx <- which(grepl(search_term, param_vals, fixed = TRUE))
   }
 
-  mapped_rows[[qcvn_param]] <- sample_row
+  if (length(idx) > 0) {
+    for (col in sample_cols) {
+      val <- data[[col]][idx[1]]
+      sample_row[[col]] <- if (!is.na(val) && val != "") as.numeric(val) else NA
+    }
+    mapped_rows[[qcvn_param]] <- sample_row
+  } else {
+    unmapped_variables <- c(unmapped_variables, imported_var)
+  }
 }
 
 # Calculate mapping quality
-total_mappings <- nrow(mappings)
+total_mappings <- length(mappings)
 mapped_count <- length(mapped_rows)
-auto_mapped <- sum(!mappings$is_manual & !is.null(mappings$qcvn_param) & !is.na(mappings$qcvn_param) & mappings$qcvn_param != "")
-manually_mapped <- sum(mappings$is_manual & !is.null(mappings$qcvn_param) & !is.na(mappings$qcvn_param) & mappings$qcvn_param != "")
+auto_mapped <- sum(sapply(mappings, function(m) !isTRUE(m$is_manual) && !is.null(m$qcvn_param) && m$qcvn_param != ""))
+manually_mapped <- sum(sapply(mappings, function(m) isTRUE(m$is_manual) && !is.null(m$qcvn_param) && m$qcvn_param != ""))
 unmapped_count <- length(unmapped_variables)
 
 mapping_quality <- list(
