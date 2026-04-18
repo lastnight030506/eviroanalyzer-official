@@ -135,11 +135,13 @@ function App() {
           <div className="flex-1 p-6 overflow-hidden">
             {activeTab === 'workspace' && (
               <Suspense fallback={<LoadingFallback />}>
-                <SPSSPanel isDarkMode={isDarkMode} />
+                <div className="h-full animate-fade-in tab-content-enter">
+                  <SPSSPanel isDarkMode={isDarkMode} />
+                </div>
               </Suspense>
             )}
             {activeTab === 'forecast' && (
-              <div className="h-full animate-in fade-in duration-300">
+              <div className="h-full animate-fade-in tab-content-enter">
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Time Series Forecasting</h2>
                 <Suspense fallback={<LoadingFallback />}>
                   <Forecast isDarkMode={isDarkMode} />
@@ -147,7 +149,7 @@ function App() {
               </div>
             )}
             {activeTab === 'gis' && (
-              <div className="h-full animate-in fade-in duration-300">
+              <div className="h-full animate-fade-in tab-content-enter">
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Geospatial Analysis</h2>
                 <Suspense fallback={<LoadingFallback />}>
                   <GISMap isDarkMode={isDarkMode} />
@@ -155,7 +157,7 @@ function App() {
               </div>
             )}
             {activeTab === 'settings' && (
-              <div className="h-full animate-in fade-in duration-300 overflow-auto">
+              <div className="h-full animate-fade-in tab-content-enter overflow-auto">
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Settings</h2>
                 <Suspense fallback={<LoadingFallback />}>
                   <RegulationManager
