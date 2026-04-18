@@ -74,14 +74,24 @@ function executeRScript(scriptName, args) {
 
   return new Promise((resolve) => {
     try {
-      const cmd = `"${RSCRIPT_PATH}" --vanilla "${scriptPath}" ${args.join(' ')}`;
+      // Pass JSON via temp file to avoid command-line encoding issues with Unicode
+      const inputFile = path.join(__dirname, 'temp_input.json');
+      fs.writeFileSync(inputFile, args[0] || '{}', 'utf8');
+      const inputFileArg = inputFile.replace(/\\/g, '/');
+      const cmd = `"${RSCRIPT_PATH}" --vanilla "${scriptPath.replace(/\\/g, '/')}" "${inputFileArg}"`;
+      console.log(`[DEBUG] Full command: ${cmd}`);
       const stdout = execSync(cmd, {
         cwd: SCRIPTS_DIR,
         encoding: 'utf8',
         maxBuffer: 10 * 1024 * 1024
       });
+      // Clean up temp file after R finishes
+      try { fs.unlinkSync(inputFile); } catch (e) { /* ignore */ }
       resolve({ success: true, output: stdout.trim(), error: null });
     } catch (err) {
+      // Clean up temp file on error too
+      const inputFile = path.join(__dirname, 'temp_input.json');
+      try { fs.unlinkSync(inputFile); } catch (e) { /* ignore */ }
       resolve({
         success: false,
         output: err.stdout?.trim() || '',
@@ -104,6 +114,27 @@ app.post('/api/rscript', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, output: '', error: error.message });
+  }
+});
+
+// File upload endpoint for Excel/SPSS files
+app.post('/api/upload', async (req, res) => {
+  try {
+    const { filename, content } = req.body;
+    if (!filename || !content) {
+      return res.status(400).json({ error: 'filename and content required' });
+    }
+    const uploadDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const filePath = path.join(uploadDir, filename);
+    // Decode base64 content
+    const buffer = Buffer.from(content, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    res.json({ success: true, filePath });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

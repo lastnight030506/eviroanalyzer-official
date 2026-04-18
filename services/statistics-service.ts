@@ -1,8 +1,18 @@
-import { runRScript } from './r-sidecar';
-import type { DataLoadResult, ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, ChiSquareResult, LinearRegressionResult, LogisticRegressionResult, PlotResult, VariableInfo } from '../types/statistics';
+import { runRScript, uploadFile } from './r-sidecar';
+import type { DataLoadResult, ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, ChiSquareResult, LinearRegressionResult, LogisticRegressionResult, PlotResult, VariableInfo, RawDataRow } from '../types/statistics';
 
-export async function loadData(filePath: string, fileType: 'csv' | 'excel' | 'sav'): Promise<DataLoadResult> {
-  return runRScript<DataLoadResult>('read_data.R', [JSON.stringify({ file_path: filePath, file_type: fileType })]);
+export async function loadData(filePath: string, fileType: 'csv' | 'excel' | 'sav', fileContent?: ArrayBuffer): Promise<DataLoadResult> {
+  // For Excel/SPSS, upload file first to server
+  if ((fileType === 'excel' || fileType === 'sav') && fileContent) {
+    const uploadResult = await uploadFile(filePath, fileContent);
+    if (!uploadResult.success || !uploadResult.filePath) {
+      throw new Error(uploadResult.error || 'File upload failed');
+    }
+    return runRScript<DataLoadResult>('read_data.R', [JSON.stringify({ file_path: uploadResult.filePath, file_type: fileType })]);
+  }
+  // For CSV, percent-encode the filepath to handle Unicode characters
+  const encodedPath = encodeURIComponent(filePath);
+  return runRScript<DataLoadResult>('read_data.R', [JSON.stringify({ file_path: encodedPath, file_type: fileType, original_name: filePath })]);
 }
 
 export async function getDescriptives(sessionId: string, variables: string[]): Promise<ContinuousResult[]> {
@@ -43,4 +53,10 @@ export async function runLogisticRegression(sessionId: string, formula: string):
 
 export async function generatePlot(sessionId: string, plotType: 'histogram' | 'boxplot' | 'scatter' | 'bar', xVar: string, yVar?: string, groupBy?: string): Promise<PlotResult> {
   return runRScript<PlotResult>('plot_generator.R', [JSON.stringify({ session_id: sessionId, plot_type: plotType, x_var: xVar, y_var: yVar, group_by: groupBy })]);
+}
+
+export async function loadDirectDataToSession(variables: VariableInfo[], data: RawDataRow[]): Promise<string> {
+  const { loadDirectData } = await import('./stats-data-service');
+  const result = await loadDirectData({ variables, data });
+  return result.session_id;
 }

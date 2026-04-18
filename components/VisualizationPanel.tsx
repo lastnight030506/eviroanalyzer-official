@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { generatePlot } from '../services/statistics-service';
 import { syntaxLogger } from '../services/syntax-logger';
-import type { PlotResult } from '../types/statistics';
+import { useStats } from './StatsContext';
 
 interface Props {
   isDarkMode: boolean;
@@ -9,19 +9,16 @@ interface Props {
 }
 
 const VisualizationPanel: React.FC<Props> = ({ isDarkMode, dataLoaded }) => {
+  const { sessionId, variables, addOutput } = useStats();
   const [plotType, setPlotType] = useState<'histogram' | 'boxplot' | 'scatter' | 'bar'>('histogram');
   const [xVar, setXVar] = useState<string>('');
   const [yVar, setYVar] = useState<string>('');
   const [groupBy, setGroupBy] = useState<string>('');
-  const [result, setResult] = useState<PlotResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string>('');
 
-  useMemo(() => {
-    const stored = localStorage.getItem('stats_session_id');
-    if (stored) setSessionId(stored);
-  }, []);
+  const numericVars = useMemo(() => variables.filter(v => v.type === 'numeric'), [variables]);
+  const factorVars = useMemo(() => variables.filter(v => v.type === 'factor'), [variables]);
 
   const runPlot = async () => {
     if (!sessionId || !xVar) return;
@@ -29,7 +26,11 @@ const VisualizationPanel: React.FC<Props> = ({ isDarkMode, dataLoaded }) => {
     setError(null);
     try {
       const res = await generatePlot(sessionId, plotType, xVar, yVar || undefined, groupBy || undefined);
-      setResult(res);
+      addOutput({
+        type: 'plot',
+        title: `${plotType.charAt(0).toUpperCase() + plotType.slice(1)}: ${xVar}${groupBy ? ` by ${groupBy}` : ''}`,
+        plotHtml: res.html_content,
+      });
       syntaxLogger.logOperation('Plot', { plot_type: plotType, x_var: xVar, y_var: yVar, group_by: groupBy },
         `ggplot(data, aes(${plotType === 'scatter' ? `x=${xVar}, y=${yVar}` : `x=${xVar}`})) + geom_${plotType}()`);
     } catch (err) {
@@ -41,6 +42,7 @@ const VisualizationPanel: React.FC<Props> = ({ isDarkMode, dataLoaded }) => {
 
   const cardStyle = `bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4`;
   const inputStyle = `w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent`;
+  const selectStyle = `w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none`;
 
   if (!dataLoaded) {
     return (
@@ -70,35 +72,44 @@ const VisualizationPanel: React.FC<Props> = ({ isDarkMode, dataLoaded }) => {
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
               {plotType === 'scatter' ? 'X Variable' : 'Variable'}
             </label>
-            <input
-              type="text"
+            <select
               value={xVar}
               onChange={e => setXVar(e.target.value)}
-              placeholder="e.g., BOD5"
-              className={inputStyle}
-            />
+              className={selectStyle}
+            >
+              <option value="">Select variable...</option>
+              {numericVars.map(v => (
+                <option key={v.name} value={v.name}>{v.label || v.name}</option>
+              ))}
+            </select>
           </div>
           {plotType === 'scatter' && (
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Y Variable</label>
-              <input
-                type="text"
+              <select
                 value={yVar}
                 onChange={e => setYVar(e.target.value)}
-                placeholder="e.g., COD"
-                className={inputStyle}
-              />
+                className={selectStyle}
+              >
+                <option value="">Select variable...</option>
+                {numericVars.map(v => (
+                  <option key={v.name} value={v.name}>{v.label || v.name}</option>
+                ))}
+              </select>
             </div>
           )}
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Group By (optional)</label>
-            <input
-              type="text"
+            <select
               value={groupBy}
               onChange={e => setGroupBy(e.target.value)}
-              placeholder="e.g., Site"
-              className={inputStyle}
-            />
+              className={selectStyle}
+            >
+              <option value="">None</option>
+              {factorVars.map(v => (
+                <option key={v.name} value={v.name}>{v.label || v.name}</option>
+              ))}
+            </select>
           </div>
         </div>
         <button
@@ -110,19 +121,6 @@ const VisualizationPanel: React.FC<Props> = ({ isDarkMode, dataLoaded }) => {
         </button>
         {error && <p className="mt-2 text-rose-500 text-sm">{error}</p>}
       </div>
-
-      {result && (
-        <div className={cardStyle}>
-          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3">
-            {plotType.charAt(0).toUpperCase() + plotType.slice(1)} Plot
-          </h3>
-          <div
-            className="w-full overflow-auto"
-            style={{ maxHeight: '600px' }}
-            dangerouslySetInnerHTML={{ __html: result.html_content }}
-          />
-        </div>
-      )}
     </div>
   );
 };

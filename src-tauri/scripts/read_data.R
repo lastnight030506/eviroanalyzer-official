@@ -14,11 +14,17 @@ library(readr)
 library(readxl)
 
 args <- commandArgs(trailingOnly = TRUE)
-input <- fromJSON(args[1])
+# Read JSON from file (passed via temp file to handle Unicode filenames)
+input_file <- args[1]
+if (is.null(input_file) || !file.exists(input_file)) {
+  stop("Input file not found")
+}
+input <- fromJSON(input_file)
 
-file_path <- input$file_path
+# Decode URL-encoded filepath (from TypeScript encodeURIComponent)
+file_path <- URLdecode(input$file_path)
 file_type <- input$file_type
-return_data <- isTRUE(input$return_data)
+return_data <- is.null(input$return_data) || isTRUE(input$return_data)  # Default to TRUE if not specified
 
 # Session storage - use global env to persist data
 session_id <- input$session_id

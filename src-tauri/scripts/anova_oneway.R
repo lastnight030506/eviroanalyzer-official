@@ -40,13 +40,16 @@ tryCatch({
     )
   })
 
+  ss_between <- summary_df$"Sum Sq"[1]
+  ss_total <- ss_between + summary_df$"Sum Sq"[2]
+  effect_size <- ss_between / ss_total
   result <- list(
     success = TRUE,
     between_df = as.integer(summary_df$Df[1]),
     within_df = as.integer(summary_df$Df[2]),
-    F_statistic = as.numeric(summary_df$`F value`[1]),
-    p_value = as.numeric(summary_df$`Pr(>F)`[1]),
-    effect_size = summary_aov$sumsq[1] / (summary_aov$sumsq[1] + summary_aov$sumsq[2]),
+    F_statistic = as.numeric(summary_df$"F value"[1]),
+    p_value = as.numeric(summary_df$"Pr(>F)"[1]),
+    effect_size = effect_size,
     group_means = group_info
   )
 

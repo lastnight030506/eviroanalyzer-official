@@ -21,6 +21,25 @@ const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 const API_BASE = 'http://localhost:3001';
 
 /**
+ * Upload a file to the server for R processing
+ */
+export async function uploadFile(filename: string, content: ArrayBuffer): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  if (isTauri) {
+    // For Tauri, use invoke
+    return invoke("upload_file", { filename, content: Array.from(new Uint8Array(content)) });
+  } else {
+    // For browser, use fetch
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(content)));
+    const response = await fetch(`${API_BASE}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content: base64 })
+    });
+    return response.json();
+  }
+}
+
+/**
  * Execute R script via Tauri (desktop) or localhost server (browser)
  */
 async function executeRScriptBackend(scriptName: string, args: string[]): Promise<RScriptResult> {

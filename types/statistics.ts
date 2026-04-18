@@ -181,3 +181,9 @@ export interface QCVNParameterRef {
   type: 'max' | 'min';
   aliases?: string[];
 }
+
+// Direct Data Entry Types
+export interface StatsDataEntry {
+  variables: VariableInfo[];
+  data: RawDataRow[];
+}
