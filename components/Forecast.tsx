@@ -8,55 +8,53 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Area,
   ComposedChart,
   ReferenceLine,
 } from 'recharts';
-import { SampleRow, AssessmentResult } from '../types';
+import { useStats } from './StatsContext';
 import { forecastARIMA, ARIMAResult } from '../services/analytics';
 import { COLORS } from '../constants';
 
 interface ForecastProps {
-  data: SampleRow[];
-  results: AssessmentResult[];
-  sampleColumns: string[];
   isDarkMode: boolean;
 }
 
-const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDarkMode }) => {
-  const [selectedParameter, setSelectedParameter] = useState<string>('');
+const Forecast: React.FC<ForecastProps> = ({ isDarkMode }) => {
+  const { variables, dataRows, dataLoaded } = useStats();
+  const [selectedVariable, setSelectedVariable] = useState<string>('');
   const [forecastPeriods, setForecastPeriods] = useState<number>(5);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forecastResult, setForecastResult] = useState<ARIMAResult | null>(null);
 
-  // Get available parameters
-  const parameters = useMemo(() => {
-    return data.map(row => ({
-      id: row.parameterId,
-      name: row.parameterName,
-    }));
-  }, [data]);
+  // Get available numeric variables from SPSS data
+  const numericVariables = useMemo(() => {
+    return variables
+      .filter(v => v.type === 'numeric')
+      .map(v => ({
+        name: v.name,
+        label: v.label || v.name,
+      }));
+  }, [variables]);
 
-  // Get values for selected parameter
-  const getParameterValues = (parameterId: string): number[] => {
-    const row = data.find(r => r.parameterId === parameterId);
-    if (!row) return [];
-    
-    return sampleColumns.map(col => {
-      const val = row[col];
-      return typeof val === 'number' ? val : 0;
-    });
+  // Get values for selected variable
+  const getVariableValues = (varName: string): number[] => {
+    return dataRows
+      .map(row => {
+        const val = row[varName];
+        return typeof val === 'number' && !isNaN(val) ? val : null;
+      })
+      .filter((v): v is number => v !== null);
   };
 
   // Run forecast
   const handleForecast = async () => {
-    if (!selectedParameter) {
-      setError('Please select a parameter');
+    if (!selectedVariable) {
+      setError('Please select a variable');
       return;
     }
 
-    const values = getParameterValues(selectedParameter);
+    const values = getVariableValues(selectedVariable);
     if (values.length < 3) {
       setError('Need at least 3 data points for forecasting');
       return;
@@ -66,11 +64,10 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
     setError(null);
 
     try {
-      const row = data.find(r => r.parameterId === selectedParameter);
       const result = await forecastARIMA({
         values,
         periods: forecastPeriods,
-        parameter: row?.parameterName || selectedParameter,
+        parameter: selectedVariable,
       });
 
       if (result.success) {
@@ -120,12 +117,6 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
     return data;
   }, [forecastResult]);
 
-  // Get limit for reference line
-  const parameterLimit = useMemo(() => {
-    const row = data.find(r => r.parameterId === selectedParameter);
-    return row?.limit;
-  }, [data, selectedParameter]);
-
   const styles = {
     card: `bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6`,
     label: `text-xs font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider mb-2`,
@@ -135,23 +126,33 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
     statCard: `p-4 rounded-lg bg-slate-50 dark:bg-slate-900`,
   };
 
+  // Check if forecast can run
+  const canRunForecast = dataLoaded && numericVariables.length > 0 && selectedVariable;
+
   return (
     <div className="h-full flex flex-col gap-6 overflow-auto">
       {/* Controls */}
       <div className={styles.card}>
         <h3 className="text-lg font-semibold mb-4 dark:text-white">Time Series Forecasting (ARIMA)</h3>
-        
+
+        {!dataLoaded && (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md text-amber-600 dark:text-amber-400 text-sm">
+            Load data in the SPSS panel to enable forecasting
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className={styles.label}>Parameter</label>
+            <label className={styles.label}>Variable</label>
             <select
-              value={selectedParameter}
-              onChange={(e) => setSelectedParameter(e.target.value)}
+              value={selectedVariable}
+              onChange={(e) => setSelectedVariable(e.target.value)}
+              disabled={!dataLoaded}
               className={styles.select}
             >
-              <option value="">Select parameter...</option>
-              {parameters.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              <option value="">Select variable...</option>
+              {numericVariables.map(v => (
+                <option key={v.name} value={v.name}>{v.label || v.name}</option>
               ))}
             </select>
           </div>
@@ -164,6 +165,7 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
               max={20}
               value={forecastPeriods}
               onChange={(e) => setForecastPeriods(parseInt(e.target.value) || 5)}
+              disabled={!dataLoaded}
               className={styles.input}
             />
           </div>
@@ -171,14 +173,14 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
           <div>
             <label className={styles.label}>Data Points</label>
             <div className="p-2.5 bg-slate-100 dark:bg-slate-900 rounded-md text-sm font-mono">
-              {selectedParameter ? getParameterValues(selectedParameter).length : 0}
+              {selectedVariable ? getVariableValues(selectedVariable).length : 0}
             </div>
           </div>
 
           <div className="flex items-end">
             <button
               onClick={handleForecast}
-              disabled={isLoading || !selectedParameter}
+              disabled={isLoading || !canRunForecast}
               className={styles.button}
             >
               {isLoading ? (
@@ -311,16 +313,7 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
                   name="Forecast"
                 />
 
-                {/* Limit reference line */}
-                {parameterLimit && (
-                  <ReferenceLine
-                    y={parameterLimit}
-                    stroke={COLORS.danger}
-                    strokeDasharray="3 3"
-                    label={{ value: `Limit: ${parameterLimit}`, fill: COLORS.danger, fontSize: 12 }}
-                  />
-                )}
-              </ComposedChart>
+                              </ComposedChart>
             </ResponsiveContainer>
           </div>
 
@@ -335,9 +328,6 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
                     <th className="text-right py-2 px-3 font-medium text-slate-500 dark:text-slate-400">Forecast</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-500 dark:text-slate-400">Lower 95%</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-500 dark:text-slate-400">Upper 95%</th>
-                    {parameterLimit && (
-                      <th className="text-right py-2 px-3 font-medium text-slate-500 dark:text-slate-400">% of Limit</th>
-                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -347,14 +337,6 @@ const Forecast: React.FC<ForecastProps> = ({ data, results, sampleColumns, isDar
                       <td className="py-2 px-3 text-right font-mono dark:text-slate-300">{val.toFixed(3)}</td>
                       <td className="py-2 px-3 text-right font-mono text-slate-500">{forecastResult.forecast.lower[i].toFixed(3)}</td>
                       <td className="py-2 px-3 text-right font-mono text-slate-500">{forecastResult.forecast.upper[i].toFixed(3)}</td>
-                      {parameterLimit && (
-                        <td className={`py-2 px-3 text-right font-mono ${
-                          (val / parameterLimit) > 1 ? 'text-rose-500' : 
-                          (val / parameterLimit) > 0.8 ? 'text-amber-500' : 'text-emerald-500'
-                        }`}>
-                          {((val / parameterLimit) * 100).toFixed(1)}%
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
