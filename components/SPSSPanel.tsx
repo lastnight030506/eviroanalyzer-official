@@ -229,8 +229,8 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Variable List */}
         <div
-          className={`w-56 flex-shrink-0 border-r ${borderColor} panel-transition overflow-hidden ${
-            showVariableList ? 'opacity-100 max-w-56' : 'opacity-0 max-w-0'
+          className={`flex-shrink-0 border-r ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
+            showVariableList ? 'w-56 opacity-100' : 'w-0 opacity-0'
           }`}
         >
           {showVariableList && (
@@ -255,8 +255,8 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
 
           {/* Bottom Panel - Output Viewer */}
           <div
-            className={`border-t ${borderColor} panel-transition overflow-hidden ${
-              showOutput ? 'h-[35%] opacity-100' : 'h-0 opacity-0'
+            className={`border-t ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
+              showOutput ? 'max-h-[35vh] opacity-100' : 'max-h-0 opacity-0'
             }`}
           >
             {showOutput && (
