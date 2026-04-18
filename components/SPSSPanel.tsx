@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import MenuBar from './SPSSMenuBar';
 import VariableList from './SPSSVariableList';
 import DataView from './SPSSDataView';
@@ -18,6 +18,34 @@ export interface SPSSPanelProps {
   isDarkMode: boolean;
 }
 
+// Custom resize handle component
+interface ResizeHandleProps {
+  direction: 'horizontal' | 'vertical';
+  isDarkMode: boolean;
+  onMouseDown: (e: React.MouseEvent) => void;
+  isVisible: boolean;
+}
+
+const ResizeHandle: React.FC<ResizeHandleProps> = ({ direction, isDarkMode, onMouseDown, isVisible }) => {
+  if (!isVisible) return null;
+
+  const isH = direction === 'horizontal';
+  const baseClasses = isDarkMode
+    ? 'bg-slate-600 hover:bg-emerald-500'
+    : 'bg-slate-300 hover:bg-emerald-500';
+  const cursorClass = isH ? 'cursor-col-resize' : 'cursor-row-resize';
+  const dimensionClass = isH ? 'w-1 h-full' : 'h-1 w-full';
+
+  return (
+    <div
+      className={`resize-handle ${dimensionClass} ${baseClasses} ${cursorClass} flex-shrink-0 transition-colors duration-150 relative z-10 group`}
+      onMouseDown={onMouseDown}
+    >
+      <div className={`absolute ${isH ? 'left-0 top-1/2 -translate-y-1/2' : 'top-0 left-1/2 -translate-x-1/2'} ${isH ? 'w-1 h-8' : 'h-1 w-8'} rounded-full bg-current opacity-0 group-hover:opacity-60 transition-opacity duration-150`} />
+    </div>
+  );
+};
+
 const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
   const [showVariableList, setShowVariableList] = useState(true);
   const [showOutput, setShowOutput] = useState(true);
@@ -25,6 +53,74 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addOutput, variables: contextVariables, dataLoaded, sessionId, setVariables: setContextVariables, setDataRows: setContextDataRows, setDataLoaded } = useStats();
+
+  // Panel sizes (in pixels or percentage)
+  const [varListWidth, setVarListWidth] = useState(224); // default ~56 * 4 = 224px (w-56)
+  const [outputHeight, setOutputHeight] = useState(35); // default 35vh
+
+  // Drag state refs
+  const dragRef = useRef<{
+    type: 'varList' | 'output' | null;
+    startPos: number;
+    startSize: number;
+  }>({ type: null, startPos: 0, startSize: 0 });
+
+  // Handle horizontal resize (Variable List width)
+  const handleVarListResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = {
+      type: 'varList',
+      startPos: e.clientX,
+      startSize: varListWidth,
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (dragRef.current.type !== 'varList') return;
+      const delta = e.clientX - dragRef.current.startPos;
+      const newWidth = Math.max(160, Math.min(400, dragRef.current.startSize + delta));
+      setVarListWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      dragRef.current.type = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [varListWidth]);
+
+  // Handle vertical resize (Output height)
+  const handleOutputResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = {
+      type: 'output',
+      startPos: e.clientY,
+      startSize: outputHeight,
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (dragRef.current.type !== 'output') return;
+      const container = document.getElementById('main-content-area');
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      const containerHeight = containerRect.height;
+      const delta = dragRef.current.startPos - e.clientY; // invert for natural feel
+      const deltaPercent = (delta / containerHeight) * 100;
+      const newHeight = Math.max(15, Math.min(70, dragRef.current.startSize + deltaPercent));
+      setOutputHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      dragRef.current.type = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [outputHeight]);
 
   const handleVarSelect = (varName: string, multi: boolean) => {
     setSelectedVariables(prev => {
@@ -226,12 +322,13 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
       <MenuBar isDarkMode={isDarkMode} onMenuAction={handleMenuAction} />
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div id="main-content-area" className="flex flex-1 overflow-hidden">
         {/* Left Panel - Variable List */}
         <div
-          className={`flex-shrink-0 border-r ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
-            showVariableList ? 'w-56 opacity-100' : 'w-0 opacity-0'
+          className={`flex-shrink-0 border-r ${borderColor} transition-[width] duration-200 ease-out overflow-hidden ${
+            showVariableList ? 'opacity-100' : 'w-0 opacity-0'
           }`}
+          style={showVariableList ? { width: varListWidth } : undefined}
         >
           {showVariableList && (
             <VariableList
@@ -243,6 +340,14 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
           )}
         </div>
 
+        {/* Horizontal Resize Handle (Variable List) */}
+        <ResizeHandle
+          direction="horizontal"
+          isDarkMode={isDarkMode}
+          onMouseDown={handleVarListResizeStart}
+          isVisible={showVariableList}
+        />
+
         {/* Right side - Data Grid and Output stacked */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Center Panel - Data Grid */}
@@ -253,11 +358,20 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
             />
           </div>
 
+          {/* Vertical Resize Handle (Output Panel) */}
+          <ResizeHandle
+            direction="vertical"
+            isDarkMode={isDarkMode}
+            onMouseDown={handleOutputResizeStart}
+            isVisible={showOutput}
+          />
+
           {/* Bottom Panel - Output Viewer */}
           <div
             className={`border-t ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
-              showOutput ? 'max-h-[35vh] opacity-100' : 'max-h-0 opacity-0'
+              showOutput ? 'opacity-100' : 'max-h-0 opacity-0'
             }`}
+            style={showOutput ? { maxHeight: `${outputHeight}vh` } : undefined}
           >
             {showOutput && (
               <OutputViewer isDarkMode={isDarkMode} />
@@ -277,10 +391,10 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
         </div>
         <div className="flex items-center gap-4">
           {showVariableList && (
-            <span className="text-emerald-600 dark:text-emerald-400">Variable List: ON</span>
+            <span className="text-emerald-600 dark:text-emerald-400">Variable List: {varListWidth}px</span>
           )}
           {showOutput && (
-            <span className="text-emerald-600 dark:text-emerald-400">Output: ON</span>
+            <span className="text-emerald-600 dark:text-emerald-400">Output: {outputHeight}vh</span>
           )}
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${dataLoaded ? 'bg-emerald-500' : 'bg-slate-400'}`} />
