@@ -56,11 +56,11 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
 
   // Panel sizes (in pixels or percentage)
   const [varListWidth, setVarListWidth] = useState(224); // default ~56 * 4 = 224px (w-56)
-  const [outputHeight, setOutputHeight] = useState(35); // default 35vh
+  const [dataGridWidth, setDataGridWidth] = useState(65); // default 65% for Data Grid
 
   // Drag state refs
   const dragRef = useRef<{
-    type: 'varList' | 'output' | null;
+    type: 'varList' | 'dataGrid' | null;
     startPos: number;
     startSize: number;
   }>({ type: null, startPos: 0, startSize: 0 });
@@ -91,25 +91,25 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
     document.addEventListener('mouseup', handleMouseUp);
   }, [varListWidth]);
 
-  // Handle vertical resize (Output height)
-  const handleOutputResizeStart = useCallback((e: React.MouseEvent) => {
+  // Handle horizontal resize (Data Grid / Output split)
+  const handleDataGridOutputResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current = {
-      type: 'output',
-      startPos: e.clientY,
-      startSize: outputHeight,
+      type: 'dataGrid',
+      startPos: e.clientX,
+      startSize: dataGridWidth,
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (dragRef.current.type !== 'output') return;
-      const container = document.getElementById('main-content-area');
+      if (dragRef.current.type !== 'dataGrid') return;
+      const container = document.getElementById('data-output-area');
       if (!container) return;
       const containerRect = container.getBoundingClientRect();
-      const containerHeight = containerRect.height;
-      const delta = dragRef.current.startPos - e.clientY; // invert for natural feel
-      const deltaPercent = (delta / containerHeight) * 100;
-      const newHeight = Math.max(15, Math.min(70, dragRef.current.startSize + deltaPercent));
-      setOutputHeight(newHeight);
+      const containerWidth = containerRect.width;
+      const delta = e.clientX - dragRef.current.startPos;
+      const deltaPercent = (delta / containerWidth) * 100;
+      const newWidth = Math.max(20, Math.min(75, dragRef.current.startSize + deltaPercent));
+      setDataGridWidth(newWidth);
     };
 
     const handleMouseUp = () => {
@@ -120,7 +120,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [outputHeight]);
+  }, [dataGridWidth]);
 
   const handleVarSelect = (varName: string, multi: boolean) => {
     setSelectedVariables(prev => {
@@ -348,30 +348,33 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
           isVisible={showVariableList}
         />
 
-        {/* Right side - Data Grid and Output stacked */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Right side - Data Grid and Output side-by-side */}
+        <div id="data-output-area" className="flex-1 flex overflow-hidden">
           {/* Center Panel - Data Grid */}
-          <div className="flex-1 overflow-hidden">
+          <div
+            className="overflow-hidden transition-[width] duration-200"
+            style={{ width: showOutput ? `${dataGridWidth}%` : '100%' }}
+          >
             <DataView
               isDarkMode={isDarkMode}
               selectedVariables={selectedVariables}
             />
           </div>
 
-          {/* Vertical Resize Handle (Output Panel) */}
+          {/* Horizontal Resize Handle (Data Grid / Output) */}
           <ResizeHandle
-            direction="vertical"
+            direction="horizontal"
             isDarkMode={isDarkMode}
-            onMouseDown={handleOutputResizeStart}
+            onMouseDown={handleDataGridOutputResizeStart}
             isVisible={showOutput}
           />
 
-          {/* Bottom Panel - Output Viewer */}
+          {/* Right Panel - Output Viewer */}
           <div
-            className={`border-t ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
-              showOutput ? 'opacity-100' : 'max-h-0 opacity-0'
+            className={`border-l ${borderColor} transition-all duration-200 ease-out overflow-hidden ${
+              showOutput ? 'opacity-100' : 'w-0 opacity-0'
             }`}
-            style={showOutput ? { maxHeight: `${outputHeight}vh` } : undefined}
+            style={showOutput ? { width: `${100 - dataGridWidth}%` } : undefined}
           >
             {showOutput && (
               <OutputViewer isDarkMode={isDarkMode} />
@@ -390,11 +393,8 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
           </span>
         </div>
         <div className="flex items-center gap-4">
-          {showVariableList && (
-            <span className="text-emerald-600 dark:text-emerald-400">Variable List: {varListWidth}px</span>
-          )}
           {showOutput && (
-            <span className="text-emerald-600 dark:text-emerald-400">Output: {outputHeight}vh</span>
+            <span className="text-emerald-600 dark:text-emerald-400">Data Grid: {dataGridWidth}% | Output: {100 - dataGridWidth}%</span>
           )}
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${dataLoaded ? 'bg-emerald-500' : 'bg-slate-400'}`} />
