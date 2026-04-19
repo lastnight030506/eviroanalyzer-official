@@ -3,7 +3,7 @@ import type { VariableInfo, RawDataRow } from '../types/statistics';
 
 export interface OutputItem {
   id: string;
-  type: 'descriptives' | 'anova' | 'ttest' | 'correlation' | 'plot' | 'regression' | 'freq';
+  type: 'descriptives' | 'anova' | 'ttest' | 'correlation' | 'plot' | 'regression' | 'freq' | 'text';
   title: string;
   timestamp: string;
   tableData?: unknown;

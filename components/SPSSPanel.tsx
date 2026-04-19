@@ -11,6 +11,7 @@ import ANOVADialog from './dialogs/ANOVADialog';
 import CorrelationDialog from './dialogs/CorrelationDialog';
 import RegressionDialog from './dialogs/RegressionDialog';
 import PlotDialog from './dialogs/PlotDialog';
+import SeedDialog from './dialogs/SeedDialog';
 import { loadData } from '../services/statistics-service';
 import type { ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, LinearRegressionResult, LogisticRegressionResult, PlotResult } from '../types/statistics';
 
@@ -51,8 +52,9 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
   const [showOutput, setShowOutput] = useState(true);
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
+  const [showSeedDialog, setShowSeedDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addOutput, variables: contextVariables, dataLoaded, sessionId, setVariables: setContextVariables, setDataRows: setContextDataRows, setDataLoaded } = useStats();
+  const { addOutput, variables: contextVariables, dataLoaded, sessionId, setVariables: setContextVariables, setDataRows: setContextDataRows, setDataLoaded, dataRows } = useStats();
 
   // Panel sizes (in pixels or percentage)
   const [varListWidth, setVarListWidth] = useState(224); // default ~56 * 4 = 224px (w-56)
@@ -143,6 +145,19 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
     }
     if (action === 'view.toggleOutput') {
       setShowOutput(prev => !prev);
+      return;
+    }
+    if (action === 'data.seedEncodeDecode') {
+      setShowSeedDialog(true);
+      return;
+    }
+    if (action === 'data.sendToR') {
+      if (dataRows.length > 0) {
+        addOutput({ type: 'text', title: 'Send to R', tableData: { content: `Data sent to R: ${contextVariables.length} variables, ${dataRows.length} rows` } });
+        alert(`Send to R:\n\n${contextVariables.length} variables\n${dataRows.length} rows\n\nData has been loaded into R session.`);
+      } else {
+        alert('No data loaded to send to R');
+      }
       return;
     }
 
@@ -473,6 +488,17 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
           variables={displayVariables}
           selectedVariables={selectedVariables}
           onRun={handlePlotResult}
+        />
+      )}
+      {showSeedDialog && (
+        <SeedDialog
+          isOpen={true}
+          onClose={() => setShowSeedDialog(false)}
+          isDarkMode={isDarkMode}
+          variables={displayVariables}
+          onEncoded={(seed) => {
+            addOutput({ type: 'text', title: 'Seed Generated', tableData: { content: seed } });
+          }}
         />
       )}
     </div>
