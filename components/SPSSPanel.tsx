@@ -54,7 +54,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
   const [showSeedDialog, setShowSeedDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addOutput, variables: contextVariables, dataLoaded, sessionId, setVariables: setContextVariables, setDataRows: setContextDataRows, setDataLoaded, dataRows } = useStats();
+  const { addOutput, variables: contextVariables, dataLoaded, sessionId, setVariables: setContextVariables, setDataRows: setContextDataRows, setDataLoaded, setSessionId, dataRows } = useStats();
 
   // Panel sizes (in pixels or percentage)
   const [varListWidth, setVarListWidth] = useState(224); // default ~56 * 4 = 224px (w-56)
@@ -286,6 +286,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
         setContextVariables(result.variables);
         setContextDataRows(result.data);
         setDataLoaded(true);
+        if (result.session_id) setSessionId(result.session_id);
         console.log('[DEBUG] Excel loaded - vars:', result.variables.length, 'rows:', result.row_count);
         alert(`Loaded ${result.row_count} rows, ${result.variables.length} variables from Excel`);
       } else if (ext === 'sav') {
@@ -296,6 +297,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
         setContextVariables(result.variables);
         setContextDataRows(result.data);
         setDataLoaded(true);
+        if (result.session_id) setSessionId(result.session_id);
         console.log('[DEBUG] SPSS loaded - vars:', result.variables.length, 'rows:', result.row_count);
         alert(`Loaded ${result.row_count} rows, ${result.variables.length} variables from SPSS`);
       } else {
