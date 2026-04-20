@@ -138,7 +138,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
     });
   };
 
-  const handleMenuAction = (action: string, data?: unknown) => {
+  const handleMenuAction = async (action: string, data?: unknown) => {
     if (action === 'view.toggleVariableList') {
       setShowVariableList(prev => !prev);
       return;
