@@ -12,8 +12,9 @@ import CorrelationDialog from './dialogs/CorrelationDialog';
 import RegressionDialog from './dialogs/RegressionDialog';
 import PlotDialog from './dialogs/PlotDialog';
 import SeedDialog from './dialogs/SeedDialog';
+import ChiSquareDialog from './dialogs/ChiSquareDialog';
 import { loadData, loadDirectDataToSession } from '../services/statistics-service';
-import type { ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, LinearRegressionResult, LogisticRegressionResult, PlotResult } from '../types/statistics';
+import type { ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, ChiSquareResult, LinearRegressionResult, LogisticRegressionResult, PlotResult } from '../types/statistics';
 
 export interface SPSSPanelProps {
   isDarkMode: boolean;
@@ -223,6 +224,10 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
   const handleCorrelationResult = (result: CorrelationResult) => {
     const title = result.method === 'pearson' ? 'Pearson Correlation' : 'Spearman Correlation';
     addOutput({ type: 'correlation', title, tableData: result });
+  };
+
+  const handleChiSquareResult = (result: ChiSquareResult) => {
+    addOutput({ type: 'chisquare', title: 'Chi-Square Test', tableData: result });
   };
 
   const handleLinearRegressionResult = (result: LinearRegressionResult) => {
@@ -497,6 +502,16 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
           variables={displayVariables}
           selectedVariables={selectedVariables}
           onRun={handlePlotResult}
+        />
+      )}
+      {activeDialog === 'chisquare' && (
+        <ChiSquareDialog
+          isOpen={true}
+          onClose={() => setActiveDialog(null)}
+          isDarkMode={isDarkMode}
+          variables={displayVariables}
+          selectedVariables={selectedVariables}
+          onRun={handleChiSquareResult}
         />
       )}
       {showSeedDialog && (
