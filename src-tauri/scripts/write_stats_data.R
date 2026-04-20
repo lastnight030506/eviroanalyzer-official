@@ -26,29 +26,54 @@ if (length(data_rows) > 0) {
   }))
   rownames(data) <- NULL
 
-  # Create lookup by variable name
-  var_lookup <- setNames(lapply(variables, function(v) v), sapply(variables, function(v) v$name))
+  # Create lookup by variable name - handle JSON parsing which may return data.frame
+  var_list <- if (is.list(variables) && !is.data.frame(variables)) {
+    variables
+  } else if (is.data.frame(variables)) {
+    # Convert data.frame rows back to list of lists
+    lapply(seq_len(nrow(variables)), function(i) as.list(variables[i, ]))
+  } else {
+    list()
+  }
+  var_lookup <- setNames(var_list, sapply(var_list, function(v) if (is.list(v)) v$name else v[["name"]]))
 
   # Convert numeric columns
   for (col in col_names) {
-    if (var_lookup[[col]]$type == "numeric") {
+    var_info <- var_lookup[[col]]
+    if (is.list(var_info)) {
+      var_type <- var_info$type
+    } else if (is.character(var_info)) {
+      var_type <- var_info
+    } else {
+      var_type <- "character"
+    }
+    if (var_type == "numeric") {
       data[[col]] <- as.numeric(data[[col]])
-    } else if (var_lookup[[col]]$type == "factor") {
+    } else if (var_type == "factor") {
       data[[col]] <- as.factor(data[[col]])
     }
   }
 } else {
   # Empty data frame with correct column types
+  # Ensure variables is a list
+  var_list <- if (is.list(variables) && !is.data.frame(variables)) {
+    variables
+  } else if (is.data.frame(variables)) {
+    lapply(seq_len(nrow(variables)), function(i) as.list(variables[i, ]))
+  } else {
+    list()
+  }
   data <- data.frame(
-    sapply(variables, function(v) {
-      if (v$type == "numeric") numeric(0)
-      else if (v$type == "factor") factor(character(0))
+    sapply(var_list, function(v) {
+      v_type <- if (is.list(v)) v$type else if (is.character(v)) v else "character"
+      if (v_type == "numeric") numeric(0)
+      else if (v_type == "factor") factor(character(0))
       else character(0)
     }, simplify = FALSE),
     stringsAsFactors = FALSE,
     check.names = FALSE
   )
-  colnames(data) <- sapply(variables, function(v) v$name)
+  colnames(data) <- sapply(var_list, function(v) if (is.list(v)) v$name else v[["name"]])
 }
 
 # Store in R global environment
@@ -56,13 +81,21 @@ env_name <- paste0("stats_session_", gsub("[^a-zA-Z0-9]", "_", session_id))
 assign(env_name, data, envir = .GlobalEnv)
 
 # Also build variable info like read_data.R does
-var_info <- lapply(variables, function(var) {
+# Ensure variables is a list of lists
+var_list <- if (is.list(variables) && !is.data.frame(variables)) {
+  variables
+} else if (is.data.frame(variables)) {
+  lapply(seq_len(nrow(variables)), function(i) as.list(variables[i, ]))
+} else {
+  list()
+}
+var_info <- lapply(var_list, function(var) {
   list(
-    name = var$name,
-    label = if (!is.null(var$label)) var$label else "",
-    type = var$type,
-    levels = if (!is.null(var$levels)) var$levels else NULL,
-    missing_count = if (!is.null(var$missing_count)) var$missing_count else 0
+    name = if (is.list(var)) var$name else var[["name"]],
+    label = if (is.list(var) && !is.null(var$label)) var$label else "",
+    type = if (is.list(var)) var$type else var[["type"]],
+    levels = if (is.list(var) && !is.null(var$levels)) var$levels else NULL,
+    missing_count = if (is.list(var) && !is.null(var$missing_count)) var$missing_count else 0
   )
 })
 
