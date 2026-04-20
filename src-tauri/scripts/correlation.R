@@ -19,9 +19,22 @@ variables <- input$variables
 method <- input$method  # "pearson" or "spearman"
 
 env_name <- paste0("stats_session_", gsub("[^a-zA-Z0-9]", "_", session_id))
+session_file <- paste0("C:/Users/OS/AppData/Local/Temp/enviroanalyzer_session_", gsub("[^a-zA-Z0-9]", "_", session_id), ".json")
 
 tryCatch({
-  data <- get(env_name, envir = .GlobalEnv)
+  # First try to get from global environment
+  if (exists(env_name, envir = .GlobalEnv)) {
+    data <- get(env_name, envir = .GlobalEnv)
+  } else if (file.exists(session_file)) {
+    # Load from saved session file
+    session_data <- fromJSON(session_file)
+    data <- do.call(rbind, lapply(session_data$data, function(row) {
+      as.data.frame(row, stringsAsFactors = FALSE)
+    }))
+    rownames(data) <- NULL
+  } else {
+    stop("Data not found in R session. Please load data first.")
+  }
   subdata <- data[variables]
 
   if (method == "pearson") {
