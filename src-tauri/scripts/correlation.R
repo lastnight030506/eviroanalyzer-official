@@ -1,15 +1,15 @@
 # EnviroAnalyzer - Correlation Analysis
 # Usage: Rscript correlation.R <json_input>
 
-required_packages <- c("jsonlite", "psych")
+library(jsonlite)
+library(psych)
+
+required_packages <- c("psych")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(psych)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

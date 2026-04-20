@@ -1,16 +1,16 @@
 # EnviroAnalyzer - One-Way ANOVA with Post-Hoc
 # Usage: Rscript anova_oneway.R <json_input>
 
-required_packages <- c("jsonlite", "car", "multcomp")
+library(jsonlite)
+library(car)
+library(multcomp)
+
+required_packages <- c("car", "multcomp")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(car)
-library(multcomp)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

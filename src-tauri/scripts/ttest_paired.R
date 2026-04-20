@@ -1,15 +1,15 @@
 # EnviroAnalyzer - Paired Samples T-Test
 # Usage: Rscript ttest_paired.R <json_input>
 
-required_packages <- c("jsonlite", "effsize")
+library(jsonlite)
+library(effsize)
+
+required_packages <- c("effsize")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(effsize)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

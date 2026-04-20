@@ -1,15 +1,15 @@
 # EnviroAnalyzer - Logistic Regression
 # Usage: Rscript regression_logistic.R <json_input>
 
-required_packages <- c("jsonlite", "broom")
+library(jsonlite)
+library(broom)
+
+required_packages <- c("broom")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(broom)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

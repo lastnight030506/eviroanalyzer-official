@@ -1,16 +1,16 @@
 # EnviroAnalyzer - Linear Regression
 # Usage: Rscript regression_linear.R <json_input>
 
-required_packages <- c("jsonlite", "broom", "car")
+library(jsonlite)
+library(broom)
+library(car)
+
+required_packages <- c("broom", "car")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(broom)
-library(car)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

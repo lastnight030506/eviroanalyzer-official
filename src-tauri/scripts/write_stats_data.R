@@ -1,13 +1,6 @@
 # EnviroAnalyzer - Write Direct Statistics Data to Session
 # Usage: Rscript write_stats_data.R <json_input>
 
-required_packages <- c("jsonlite")
-missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
-if (length(missing_packages) > 0) {
-  cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
-  quit(status = 1)
-}
-
 library(jsonlite)
 
 args <- commandArgs(trailingOnly = TRUE)

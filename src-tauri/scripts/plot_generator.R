@@ -1,16 +1,16 @@
 # EnviroAnalyzer - Plot Generator (ggplot2 -> plotly HTML)
 # Usage: Rscript plot_generator.R <json_input>
 
-required_packages <- c("jsonlite", "ggplot2", "plotly")
+library(jsonlite)
+library(ggplot2)
+library(plotly)
+
+required_packages <- c("ggplot2", "plotly")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(ggplot2)
-library(plotly)
 
 args <- commandArgs(trailingOnly = TRUE)
 input <- fromJSON(args[1])

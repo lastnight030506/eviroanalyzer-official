@@ -1,17 +1,17 @@
 # EnviroAnalyzer - Data Import (CSV, Excel, SPSS)
 # Usage: Rscript read_data.R <json_input>
 
-required_packages <- c("jsonlite", "haven", "readr", "readxl")
+library(jsonlite)
+library(haven)
+library(readr)
+library(readxl)
+
+required_packages <- c("haven", "readr", "readxl")
 missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
 if (length(missing_packages) > 0) {
   cat(toJSON(list(success = FALSE, error = paste("Missing packages:", paste(missing_packages, collapse = ", ")))))
   quit(status = 1)
 }
-
-library(jsonlite)
-library(haven)
-library(readr)
-library(readxl)
 
 args <- commandArgs(trailingOnly = TRUE)
 # Read JSON from file (passed via temp file to handle Unicode filenames)
