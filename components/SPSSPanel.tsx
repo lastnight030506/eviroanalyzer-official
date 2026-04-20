@@ -12,7 +12,7 @@ import CorrelationDialog from './dialogs/CorrelationDialog';
 import RegressionDialog from './dialogs/RegressionDialog';
 import PlotDialog from './dialogs/PlotDialog';
 import SeedDialog from './dialogs/SeedDialog';
-import { loadData } from '../services/statistics-service';
+import { loadData, loadDirectDataToSession } from '../services/statistics-service';
 import type { ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, CorrelationResult, LinearRegressionResult, LogisticRegressionResult, PlotResult } from '../types/statistics';
 
 export interface SPSSPanelProps {
@@ -277,6 +277,8 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
         setContextVariables(newVars);
         setContextDataRows(newData);
         setDataLoaded(true);
+        const sid = await loadDirectDataToSession(newVars, newData);
+        setSessionId(sid);
         console.log('[DEBUG] CSV loaded - vars:', newVars.length, 'rows:', newData.length);
       } else if (ext === 'xlsx' || ext === 'xls') {
         // Use R via sidecar for Excel - read file as ArrayBuffer and upload
