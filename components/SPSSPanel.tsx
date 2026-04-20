@@ -153,10 +153,15 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
     }
     if (action === 'data.sendToR') {
       if (dataRows.length > 0) {
-        addOutput({ type: 'text', title: 'Send to R', tableData: { content: `Data sent to R: ${contextVariables.length} variables, ${dataRows.length} rows` } });
-        alert(`Send to R:\n\n${contextVariables.length} variables\n${dataRows.length} rows\n\nData has been loaded into R session.`);
+        try {
+          const sid = await loadDirectDataToSession(contextVariables, dataRows);
+          setSessionId(sid);
+          addOutput({ type: 'text', title: 'Send to R', tableData: { content: `Data sent to R:\n${contextVariables.length} variables\n${dataRows.length} rows\nSession: ${sid}` } });
+        } catch (err) {
+          addOutput({ type: 'text', title: 'Send to R', tableData: { content: `Error: ${err instanceof Error ? err.message : 'Failed to send to R'}` } });
+        }
       } else {
-        alert('No data loaded to send to R');
+        addOutput({ type: 'text', title: 'Send to R', tableData: { content: 'No data loaded to send to R' } });
       }
       return;
     }
