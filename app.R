@@ -216,12 +216,23 @@ ui <- page_sidebar(
     .sheet-tab { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; }
     .sheet-tab:hover { background: #1e293b; color: #e2e8f0; }
     .sheet-tab.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; border-color: transparent; font-weight: 600; }
-    /* rhandsontable dark */
-    .handsontable .htCore td { background: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important; }
-    .handsontable .htCore th { background: #0f172a !important; color: #94a3b8 !important; border-color: #334155 !important; }
-    .handsontable .htCore tr:hover td { background: #0f172a !important; }
-    .handsontable .wtHider { width: 100% !important; }
-    .htContainer { width: 100% !important; }
+    /* Data preview table */
+    .preview-container { width: 100%; overflow-y: auto; overflow-x: auto; }
+    .preview-container .dataTables_wrapper { width: 100% !important; }
+    .preview-container table.dataTable { table-layout: fixed !important; width: 100% !important; }
+    .preview-container table.dataTable th { padding: 8px 12px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .preview-container table.dataTable td { padding: 6px 12px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dataTables_scrollHead { border-bottom: 1px solid #293548 !important; }
+    .dataTables_scrollBody { overflow-x: auto !important; overflow-y: auto !important; }
+    .dataTables_scrollHeadInner { width: 100% !important; }
+    table.dataTable thead th { background: #0f172a !important; color: #94a3b8 !important; border-bottom: 1px solid #293548 !important; font-weight: 600; font-size: 12px; }
+    table.dataTable tbody td { border-bottom: 1px solid #293548 !important; }
+    table.dataTable tbody tr:hover td { background: #172033 !important; }
+    table.dataTable tbody tr.odd { background-color: rgba(15,23,42,0.3) !important; }
+    table.dataTable tbody tr.odd:hover { background-color: #172033 !important; }
+    /* Align stats and table */
+    .preview-card .card-body { padding: 12px 0 0 0 !important; }
+    .preview-card .card-body > div { padding: 0 12px; }
     /* Progress bar */
     .shiny-file-input-progress { display: none; }
   "))),
@@ -258,10 +269,11 @@ server <- function(input, output, session) {
         card(
           card_header(tags$span(icon("table"), " Data Preview")),
           full_screen = TRUE,
+          class = "preview-card",
           uiOutput("data_summary_info"),
           uiOutput("sheet_tabs_ui"),
-          tags$div(style = "height: 600px; overflow: auto; width: 100%;",
-                   rHandsontableOutput("preview_table", width = "100%", height = "100%")
+          tags$div(class = "preview-container", style = "height: calc(100vh - 280px); min-height: 300px;",
+                   DT::dataTableOutput("preview_table", width = "100%", height = "100%")
           )
         )
       )
@@ -539,13 +551,29 @@ server <- function(input, output, session) {
   })
   
   # ---- DATA PREVIEW ----
-  output$preview_table <- renderRHandsontable({
+  output$preview_table <- DT::renderDataTable({
     req(sheets_data(), active_sheet())
     df <- sheets_data()[[active_sheet()]]
     req(df)
-    rhandsontable(df, stretchH = "all", rowHeaders = TRUE, height = NULL) %>%
-      hot_cols(manualColumnResize = TRUE, columnSorting = TRUE) %>%
-      hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+    DT::datatable(
+      df,
+      options = list(
+        scrollX = TRUE,
+        scrollY = "calc(100vh - 360px)",
+        scrollCollapse = TRUE,
+        paging = FALSE,
+        autoWidth = FALSE,
+        searching = TRUE,
+        info = FALSE,
+        ordering = TRUE,
+        columnDefs = list(list(width = "120px", targets = "_all"))
+      ),
+      class = "compact row-border",
+      rownames = TRUE,
+      fillContainer = TRUE,
+      style = "default",
+      selection = "none"
+    )
   })
   
   output$data_summary_info <- renderUI({
