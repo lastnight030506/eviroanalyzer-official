@@ -137,6 +137,7 @@ ui <- page_sidebar(
     "EnviroAnalyzer Pro"
   ),
   window_title = "EnviroAnalyzer Pro",
+  fillable = TRUE,
   
   sidebar = sidebar(
     width = 260,
@@ -170,7 +171,8 @@ ui <- page_sidebar(
     .nav-pills .nav-link { color: #94a3b8; border-radius: 8px; margin-bottom: 4px; font-size: 14px; }
     .nav-pills .nav-link:hover { background: #1e293b; color: #e2e8f0; }
     .nav-pills .nav-link.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; font-weight: 600; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); height: 100%; display: flex; flex-direction: column; }
+    .card-body { flex: 1 1 auto; }
     .card-header { background: #0f172a; border-bottom: 1px solid #334155; color: #e2e8f0; font-weight: 600; border-radius: 12px 12px 0 0 !important; }
     .btn-primary { background: linear-gradient(135deg, #0ea5e9, #38bdf8); border: none; font-weight: 500; }
     .btn-success { background: linear-gradient(135deg, #10b981, #34d399); border: none; font-weight: 500; }
@@ -178,8 +180,13 @@ ui <- page_sidebar(
     .btn-warning { background: linear-gradient(135deg, #f59e0b, #fbbf24); border: none; color: #0f172a; font-weight: 500; }
     .btn { border-radius: 8px; transition: all 0.2s ease; }
     .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; }
+    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; width: 100% !important; }
     .form-control:focus, .form-select:focus { border-color: #0ea5e9; box-shadow: 0 0 0 0.2rem rgba(14,165,233,0.25); }
+    .shiny-input-container { width: 100% !important; max-width: 100% !important; }
+    .selectize-control { width: 100% !important; }
+    .selectize-input { background: #0f172a !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 8px; width: 100% !important; }
+    .selectize-dropdown { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
+    .selectize-dropdown .active { background: #0ea5e9; color: #fff; }
     .value-box { border-radius: 12px; border: 1px solid #334155; }
     table.dataTable tbody tr:hover { background-color: #1e293b !important; }
     .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #94a3b8 !important; }
@@ -192,9 +199,8 @@ ui <- page_sidebar(
     .nav-tabs .nav-link.active { color: #0ea5e9; background: transparent; border-bottom-color: #0ea5e9; }
     hr { border-color: #334155; }
     .text-muted { color: #64748b !important; }
-    .selectize-input { background: #0f172a !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 8px; }
-    .selectize-dropdown { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
-    .selectize-dropdown .active { background: #0ea5e9; color: #fff; }
+    textarea { width: 100% !important; box-sizing: border-box; }
+    .plotly { width: 100% !important; }
   "))),
   
   uiOutput("tab_content")
@@ -209,8 +215,8 @@ server <- function(input, output, session) {
   output$tab_content <- renderUI({
     tab <- req(input$tabs)
     if (tab == "import") {
-      layout_column_wrap(
-        width = 1/2,
+      layout_columns(
+        col_widths = c(4, 8),
         card(
           card_header(tags$span(icon("upload"), " Upload Data")),
           fileInput("file_upload", "Choose CSV or Excel file",
@@ -222,7 +228,7 @@ server <- function(input, output, session) {
           tags$h6("Paste Data (Tab-separated)"),
           tags$textarea(
             id = "paste_data", rows = 6,
-            style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px;",
+            style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
             placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
           ),
           actionButton("parse_paste", "Parse Pasted Data",
@@ -235,8 +241,8 @@ server <- function(input, output, session) {
         )
       )
     } else if (tab == "outliers") {
-      layout_column_wrap(
-        width = 1/3,
+      layout_columns(
+        col_widths = c(3, 9),
         card(
           card_header(tags$span(icon("sliders"), " Configuration")),
           selectInput("outlier_cols", "Select Columns", choices = NULL, multiple = TRUE),
@@ -258,8 +264,8 @@ server <- function(input, output, session) {
         )
       )
     } else if (tab == "anova") {
-      layout_column_wrap(
-        width = 1/3,
+      layout_columns(
+        col_widths = c(3, 9),
         card(
           card_header(tags$span(icon("calculator"), " ANOVA Configuration")),
           selectInput("anova_value_col", "Numeric Variable", choices = NULL),
@@ -280,8 +286,8 @@ server <- function(input, output, session) {
         )
       )
     } else if (tab == "cleaning") {
-      layout_column_wrap(
-        width = 1/3,
+      layout_columns(
+        col_widths = c(4, 8),
         card(
           card_header(tags$span(icon("broom"), " Cleaning Options")),
           selectInput("clean_cols", "Columns to Clean", choices = NULL, multiple = TRUE),
@@ -434,8 +440,8 @@ server <- function(input, output, session) {
     req(raw_data())
     d <- raw_data()
     num_cols <- get_numeric_cols(d)
-    layout_column_wrap(
-      width = 1/4,
+    layout_columns(
+      col_widths = c(3, 3, 3, 3),
       value_box(
         title = "Rows",
         value = nrow(d),
