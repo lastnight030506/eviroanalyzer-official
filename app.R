@@ -239,6 +239,18 @@ ui <- page_sidebar(
     /* No-data warning */
     .no-data-warning { text-align: center; padding: 60px 20px; color: #64748b; }
     .no-data-warning .fa-3x { margin-bottom: 16px; }
+    /* Sidebar config spacing */
+    .card .shiny-input-container { margin-bottom: 12px; }
+    .card .radio { margin-bottom: 8px; }
+    .card .btn { margin-bottom: 4px; }
+    /* Notification solid bg */
+    .shiny-notification { background: #1e293b !important; color: #e2e8f0 !important; border: 1px solid #334155 !important; border-radius: 8px; opacity: 1 !important; z-index: 9999; }
+    .shiny-notification-close { color: #94a3b8 !important; }
+    /* Modal solid bg */
+    .modal-content { background: #1e293b !important; color: #e2e8f0 !important; border: 1px solid #334155; }
+    .modal-backdrop { opacity: 0.8 !important; }
+    /* Outlier summary dark cards */
+    .outlier-stat-card { margin-bottom: 8px; padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; }
   "))),
   
   # ---- TAB: DATA IMPORT ----
@@ -691,11 +703,12 @@ server <- function(input, output, session) {
   
   # Boxplot
   output$boxplot_chart <- renderPlotly({
-    req(raw_data(), input$outlier_cols)
+    req(outlier_results(), raw_data())
+    results <- outlier_results()
     data <- raw_data()
-    cols <- input$outlier_cols
+    cols <- sapply(results, function(r) r$column)
+    if (length(cols) == 0) return(NULL)
     
-    # Reshape for ggplot
     plot_data <- data %>%
       dplyr::select(dplyr::all_of(cols)) %>%
       tidyr::pivot_longer(cols = dplyr::everything(), names_to = "Parameter", values_to = "Value") %>%
@@ -708,13 +721,16 @@ server <- function(input, output, session) {
       ggplot2::theme(
         legend.position = "none",
         panel.grid.minor = ggplot2::element_blank(),
-        axis.title.x = ggplot2::element_blank()
+        axis.title.x = ggplot2::element_blank(),
+        plot.title = ggplot2::element_text(color = "#e2e8f0"),
+        axis.text = ggplot2::element_text(color = "#94a3b8"),
+        axis.title = ggplot2::element_text(color = "#94a3b8")
       ) +
       ggplot2::labs(y = "Value", title = "Distribution & Outliers by Parameter") +
       ggplot2::scale_fill_brewer(palette = "Set2")
     
     plotly::ggplotly(p, tooltip = c("x", "y")) %>%
-      plotly::layout(hoverlabel = list(bgcolor = "white"))
+      plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
   })
   
   # Outlier summary
@@ -724,15 +740,19 @@ server <- function(input, output, session) {
     
     total_outliers <- sum(sapply(results, function(r) r$n_outliers))
     
+    alert_color <- if (total_outliers == 0) "#10b981" else "#ef4444"
+    alert_icon <- if (total_outliers == 0) "circle-check" else "exclamation-circle"
+    alert_text <- if (total_outliers == 0) "No outliers detected" else paste(total_outliers, "outliers found")
+    
     tags$div(
-      tags$h4(style = "color: #ef4444;", icon("exclamation-circle"), paste(total_outliers, "outliers found")),
+      tags$h4(style = paste0("color:", alert_color, ";"), icon(alert_icon), alert_text),
       tags$hr(),
       lapply(results, function(r) {
         tags$div(
-          style = "margin-bottom: 8px; padding: 8px; background: #f8fafc; border-radius: 6px;",
+          class = "outlier-stat-card",
           tags$strong(r$column),
           tags$br(),
-          tags$span(style = "font-size: 12px; color: #64748b;",
+          tags$span(style = "font-size: 12px; color: #94a3b8;",
                     paste0(r$n_outliers, " / ", r$n_total, " (", r$pct_outliers, "%)"))
         )
       })
@@ -763,17 +783,22 @@ server <- function(input, output, session) {
       detail_df <- data.frame(Message = "No outliers detected", stringsAsFactors = FALSE)
     }
     
-    DT::datatable(
+    dt <- DT::datatable(
       detail_df,
       options = list(pageLength = 10, dom = "frtip"),
-      class = "compact stripe hover",
+      class = "compact row-border",
       rownames = FALSE
-    ) %>%
-      DT::formatStyle("Status",
-                       backgroundColor = DT::styleEqual(
-                         c("Below Lower", "Above Upper"),
-                         c("#fef2f2", "#fefce8")
-                       ))
+    )
+    
+    if ("Status" %in% colnames(detail_df)) {
+      dt <- dt %>%
+        DT::formatStyle("Status",
+                         backgroundColor = DT::styleEqual(
+                           c("Below Lower", "Above Upper"),
+                           c("#451a1a", "#422006")
+                         ))
+    }
+    dt
   })
   
   # ---- ANOVA ANALYSIS ----
