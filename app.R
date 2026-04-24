@@ -251,6 +251,30 @@ ui <- page_sidebar(
     .modal-backdrop { opacity: 0.8 !important; }
     /* Outlier summary dark cards */
     .outlier-stat-card { margin-bottom: 8px; padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; }
+    /* Tab isolation - ensure conditional panels don't overlap */
+    .shinyjs-hide { display: none !important; }
+    .tab-pane { position: relative; }
+    /* Cleaning tab specific fixes */
+    .cleaning-card { background: #1a1f2c !important; border: 1px solid #334155; position: relative; z-index: 1; }
+    .cleaning-card .card-body { background: #1a1f2c !important; }
+    .cleaning-card .selectize-input { background: #0f172a !important; z-index: 10; position: relative; }
+    .cleaning-card .selectize-dropdown { z-index: 100; }
+    .cleaning-card .form-control { background: #0f172a !important; position: relative; z-index: 5; }
+    .cleaning-card .radio { background: transparent; }
+    /* Table search bar fix */
+    .cleaning-table-container .dataTables_filter { float: none; text-align: left; margin-bottom: 12px; padding: 0 4px; }
+    .cleaning-table-container .dataTables_filter input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 4px 8px; }
+    /* Button spacing */
+    .cleaning-actions { margin-bottom: 10px; }
+    .cleaning-actions .btn { margin-bottom: 10px; }
+    /* Table boundary fix */
+    .cleaning-table-container { width: 100%; overflow: hidden; }
+    .cleaning-table-container .dataTables_wrapper { width: 100% !important; }
+    .cleaning-table-container table.dataTable { table-layout: fixed !important; width: 100% !important; }
+    .cleaning-table-container .dataTables_scroll { overflow: hidden; }
+    /* Ensure inputs are visible */
+    .shiny-input-container { position: relative; z-index: 5; }
+    .selectize-control { position: relative; z-index: 10; }
   "))),
   
   # ---- TAB: DATA IMPORT ----
@@ -289,6 +313,7 @@ ui <- page_sidebar(
   # ---- TAB: OUTLIER DETECTION ----
   conditionalPanel(
     condition = "input.tabs == 'outliers'",
+    style = "position: relative; z-index: 1;",
     uiOutput("outlier_no_data"),
     conditionalPanel(
       condition = "input.outlier_cols != null && input.outlier_cols != ''",
@@ -320,6 +345,7 @@ ui <- page_sidebar(
   # ---- TAB: ANOVA ANALYSIS ----
   conditionalPanel(
     condition = "input.tabs == 'anova'",
+    style = "position: relative; z-index: 1;",
     uiOutput("anova_no_data"),
     conditionalPanel(
       condition = "input.anova_value_col != null && input.anova_value_col != ''",
@@ -350,12 +376,14 @@ ui <- page_sidebar(
   # ---- TAB: DATA CLEANING ----
   conditionalPanel(
     condition = "input.tabs == 'cleaning'",
+    style = "position: relative; z-index: 2;",
     uiOutput("cleaning_no_data"),
     conditionalPanel(
       condition = "input.clean_cols != null && input.clean_cols != ''",
       layout_columns(
         col_widths = c(4, 8),
         card(
+          class = "cleaning-card",
           card_header(tags$span(icon("broom"), " Cleaning Options")),
           selectInput("clean_cols", "Columns to Clean", choices = NULL, multiple = TRUE),
           numericInput("clean_iqr_k", "IQR Multiplier (k)", value = 1.5, min = 0.5, max = 5, step = 0.1),
@@ -366,17 +394,22 @@ ui <- page_sidebar(
                          "Replace with NA" = "na"
                        ), selected = "cap"),
           actionButton("apply_cleaning", "Apply Cleaning",
-                       icon = icon("wand-magic-sparkles"), class = "btn-warning w-100"),
+                       icon = icon("wand-magic-sparkles"), class = "btn-warning w-100 mb-3"),
           tags$hr(),
           tags$h6("Export Cleaned Data"),
-          downloadButton("download_csv", "Download CSV", class = "btn-success w-100 mb-2"),
-          downloadButton("download_xlsx", "Download Excel", class = "btn-primary w-100"),
+          tags$div(class = "cleaning-actions",
+            downloadButton("download_csv", "Download CSV", class = "btn-success w-100 mb-2"),
+            downloadButton("download_xlsx", "Download Excel", class = "btn-primary w-100 mb-2")
+          ),
           tags$hr(),
           uiOutput("cleaning_summary")
         ),
         card(
+          class = "cleaning-card",
           card_header(tags$span(icon("table"), " Cleaned Data Preview")),
-          DT::dataTableOutput("cleaned_table")
+          tags$div(class = "cleaning-table-container",
+            DT::dataTableOutput("cleaned_table", width = "100%", height = "100%")
+          )
         )
       )
     )
@@ -934,11 +967,25 @@ server <- function(input, output, session) {
   
   output$cleaned_table <- DT::renderDataTable({
     req(cleaned_data())
+    df <- cleaned_data()
     DT::datatable(
-      cleaned_data(),
-      options = list(pageLength = 15, scrollX = TRUE, dom = "frtip"),
-      class = "compact stripe hover",
-      rownames = FALSE
+      df,
+      options = list(
+        scrollX = TRUE,
+        scrollY = "calc(100vh - 400px)",
+        scrollCollapse = TRUE,
+        paging = FALSE,
+        autoWidth = FALSE,
+        searching = TRUE,
+        info = FALSE,
+        ordering = TRUE,
+        columnDefs = list(list(width = "120px", targets = "_all"))
+      ),
+      class = "compact row-border",
+      rownames = TRUE,
+      fillContainer = TRUE,
+      style = "default",
+      selection = "none"
     )
   })
   
