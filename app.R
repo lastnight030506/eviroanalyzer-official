@@ -4,7 +4,7 @@
 # ============================================================
 
 library(shiny)
-library(shinydashboard)
+library(bslib)
 library(shinyWidgets)
 library(DT)
 library(rhandsontable)
@@ -106,186 +106,208 @@ get_factor_cols <- function(data) {
 }
 
 # ============================================================
-# UI
+# THEME & UI
 # ============================================================
-ui <- dashboardPage(
-  skin = "blue",
-  
-  dashboardHeader(
-    title = tags$span(
-      tags$i(class = "fas fa-leaf", style = "color: #10b981;"),
-      " EnviroAnalyzer Filter"
-    ),
-    titleWidth = 280
+dark_theme <- bs_theme(
+  version = 5,
+  bootswatch = "darkly",
+  primary = "#0ea5e9",
+  secondary = "#64748b",
+  success = "#10b981",
+  warning = "#f59e0b",
+  danger = "#ef4444",
+  info = "#38bdf8",
+  base_font = font_google("Inter"),
+  heading_font = font_google("Inter"),
+  code_font = font_google("Fira Code"),
+  "navbar-bg" = "#0f172a",
+  "body-bg" = "#0b1120",
+  "body-color" = "#e2e8f0",
+  "card-bg" = "#1e293b",
+  "card-border-color" = "#334155",
+  "input-bg" = "#0f172a",
+  "input-border-color" = "#334155",
+  "input-color" = "#e2e8f0"
+)
+
+ui <- page_sidebar(
+  theme = dark_theme,
+  title = tags$span(
+    tags$i(class = "fas fa-leaf", style = "color: #10b981; margin-right: 8px;"),
+    "EnviroAnalyzer Pro"
   ),
+  window_title = "EnviroAnalyzer Pro",
   
-  dashboardSidebar(
-    width = 280,
-    sidebarMenu(
-      id = "tabs",
-      menuItem("Data Import", tabName = "import", icon = icon("upload")),
-      menuItem("Outlier Detection", tabName = "outliers", icon = icon("search")),
-      menuItem("ANOVA Analysis", tabName = "anova", icon = icon("chart-bar")),
-      menuItem("Data Cleaning", tabName = "cleaning", icon = icon("filter"))
+  sidebar = sidebar(
+    width = 260,
+    class = "bg-dark",
+    title = tags$div(
+      style = "font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;",
+      "Navigation"
     ),
-    tags$hr(),
+    navset_pill_list(
+      id = "tabs",
+      widths = c(12, 12),
+      nav_panel("Data Import", value = "import", icon = icon("upload")),
+      nav_panel("Outlier Detection", value = "outliers", icon = icon("magnifying-glass")),
+      nav_panel("ANOVA Analysis", value = "anova", icon = icon("chart-column")),
+      nav_panel("Data Cleaning", value = "cleaning", icon = icon("filter"))
+    ),
+    tags$hr(style = "border-color: #334155;"),
     tags$div(
-      style = "padding: 10px 15px; color: #8899aa; font-size: 11px;",
+      style = "font-size: 11px; color: #64748b; padding: 0 4px;",
       tags$p("EnviroAnalyzer Pro"),
       tags$p("R Shiny Data Filtering Module"),
       tags$p(paste("R version:", R.version.string))
     )
   ),
   
-  dashboardBody(
-    # Custom CSS
-    tags$head(tags$style(HTML("
-      .content-wrapper { background-color: #f0f4f8; }
-      .box { border-top: 3px solid #3b82f6; border-radius: 8px; }
-      .box-header { background: white; }
-      .skin-blue .main-header .logo { font-weight: bold; }
-      .info-box { border-radius: 8px; }
-      .btn-primary { background-color: #3b82f6; border-color: #3b82f6; }
-      .btn-success { background-color: #10b981; border-color: #10b981; }
-      .btn-danger  { background-color: #ef4444; border-color: #ef4444; }
-      .btn-warning { background-color: #f59e0b; border-color: #f59e0b; }
-      .nav-tabs-custom > .tab-content { padding: 15px; }
-      table.dataTable tbody tr:hover { background-color: #eff6ff !important; }
-      .outlier-row { background-color: #fef2f2 !important; color: #991b1b; font-weight: 600; }
-    "))),
-    
-    tabItems(
-      # ========== TAB 1: DATA IMPORT ==========
-      tabItem(
-        tabName = "import",
-        fluidRow(
-          box(
-            title = "Upload Data", width = 4, status = "primary", solidHeader = TRUE,
-            fileInput("file_upload", "Choose CSV or Excel file",
-                      accept = c(".csv", ".xlsx", ".xls")),
-            tags$hr(),
-            actionButton("load_sample", "Load Sample Data",
-                         icon = icon("database"), class = "btn-success btn-block"),
-            tags$hr(),
-            tags$h4("Paste Data (Tab-separated)"),
-            tags$textarea(
-              id = "paste_data", rows = 6,
-              style = "width:100%; font-family: monospace; font-size: 12px;",
-              placeholder = "Paste tab-separated data here...\nHeader1\\tHeader2\\tHeader3\nVal1\\tVal2\\tVal3"
-            ),
-            actionButton("parse_paste", "Parse Pasted Data",
-                         icon = icon("clipboard"), class = "btn-primary btn-block")
-          ),
-          box(
-            title = "Data Preview", width = 8, status = "info", solidHeader = TRUE,
-            tags$div(
-              style = "margin-bottom: 10px;",
-              uiOutput("data_summary_info")
-            ),
-            DT::dataTableOutput("preview_table")
-          )
-        )
-      ),
-      
-      # ========== TAB 2: OUTLIER DETECTION ==========
-      tabItem(
-        tabName = "outliers",
-        fluidRow(
-          box(
-            title = "Configuration", width = 3, status = "primary", solidHeader = TRUE,
-            selectInput("outlier_cols", "Select Columns", choices = NULL, multiple = TRUE),
-            numericInput("iqr_multiplier", "IQR Multiplier (k)", value = 1.5, min = 0.5, max = 5, step = 0.1),
-            tags$p(class = "text-muted", style = "font-size: 11px;",
-                   "k=1.5: Standard outliers | k=3.0: Extreme outliers"),
-            actionButton("detect_outliers", "Detect Outliers",
-                         icon = icon("search"), class = "btn-primary btn-block"),
-            tags$hr(),
-            uiOutput("outlier_summary_box")
-          ),
-          box(
-            title = "Boxplot Visualization", width = 9, status = "info", solidHeader = TRUE,
-            plotlyOutput("boxplot_chart", height = "400px"),
-            tags$hr(),
-            tags$h4("Outlier Details"),
-            DT::dataTableOutput("outlier_table")
-          )
-        )
-      ),
-      
-      # ========== TAB 3: ANOVA ANALYSIS ==========
-      tabItem(
-        tabName = "anova",
-        fluidRow(
-          box(
-            title = "ANOVA Configuration", width = 3, status = "primary", solidHeader = TRUE,
-            selectInput("anova_value_col", "Numeric Variable", choices = NULL),
-            selectInput("anova_group_col", "Grouping Variable", choices = NULL),
-            actionButton("run_anova", "Run ANOVA",
-                         icon = icon("calculator"), class = "btn-primary btn-block"),
-            tags$hr(),
-            uiOutput("anova_interpretation")
-          ),
-          box(
-            title = "ANOVA Results", width = 9, status = "info", solidHeader = TRUE,
-            tabsetPanel(
-              tabPanel(
-                "ANOVA Table",
-                tags$br(),
-                DT::dataTableOutput("anova_result_table")
-              ),
-              tabPanel(
-                "Tukey HSD",
-                tags$br(),
-                DT::dataTableOutput("tukey_table")
-              ),
-              tabPanel(
-                "Group Comparison Plot",
-                tags$br(),
-                plotlyOutput("anova_plot", height = "450px")
-              )
-            )
-          )
-        )
-      ),
-      
-      # ========== TAB 4: DATA CLEANING ==========
-      tabItem(
-        tabName = "cleaning",
-        fluidRow(
-          box(
-            title = "Cleaning Options", width = 4, status = "primary", solidHeader = TRUE,
-            selectInput("clean_cols", "Columns to Clean", choices = NULL, multiple = TRUE),
-            numericInput("clean_iqr_k", "IQR Multiplier (k)", value = 1.5, min = 0.5, max = 5, step = 0.1),
-            radioButtons("clean_method", "Cleaning Method",
-                         choices = c(
-                           "Remove Outlier Rows" = "remove",
-                           "Cap to IQR Bounds (Winsorize)" = "cap",
-                           "Replace with NA" = "na"
-                         ), selected = "cap"),
-            actionButton("apply_cleaning", "Apply Cleaning",
-                         icon = icon("broom"), class = "btn-warning btn-block"),
-            tags$hr(),
-            tags$h4("Export Cleaned Data"),
-            downloadButton("download_csv", "Download CSV", class = "btn-success btn-block"),
-            tags$br(),
-            downloadButton("download_xlsx", "Download Excel", class = "btn-primary btn-block"),
-            tags$hr(),
-            uiOutput("cleaning_summary")
-          ),
-          box(
-            title = "Cleaned Data Preview", width = 8, status = "info", solidHeader = TRUE,
-            DT::dataTableOutput("cleaned_table")
-          )
-        )
-      )
-    )
-  )
+  # Custom CSS overrides
+  tags$head(tags$style(HTML("
+    :root { --ea-primary: #0ea5e9; --ea-success: #10b981; --ea-warning: #f59e0b; --ea-danger: #ef4444; }
+    body { background-color: #0b1120 !important; }
+    .bslib-page-sidebar > .bslib-sidebar-layout > .bslib-sidebar { background: #0f172a !important; border-right: 1px solid #1e293b; }
+    .nav-pills .nav-link { color: #94a3b8; border-radius: 8px; margin-bottom: 4px; font-size: 14px; }
+    .nav-pills .nav-link:hover { background: #1e293b; color: #e2e8f0; }
+    .nav-pills .nav-link.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; font-weight: 600; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+    .card-header { background: #0f172a; border-bottom: 1px solid #334155; color: #e2e8f0; font-weight: 600; border-radius: 12px 12px 0 0 !important; }
+    .btn-primary { background: linear-gradient(135deg, #0ea5e9, #38bdf8); border: none; font-weight: 500; }
+    .btn-success { background: linear-gradient(135deg, #10b981, #34d399); border: none; font-weight: 500; }
+    .btn-danger { background: linear-gradient(135deg, #ef4444, #f87171); border: none; font-weight: 500; }
+    .btn-warning { background: linear-gradient(135deg, #f59e0b, #fbbf24); border: none; color: #0f172a; font-weight: 500; }
+    .btn { border-radius: 8px; transition: all 0.2s ease; }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; }
+    .form-control:focus, .form-select:focus { border-color: #0ea5e9; box-shadow: 0 0 0 0.2rem rgba(14,165,233,0.25); }
+    .value-box { border-radius: 12px; border: 1px solid #334155; }
+    table.dataTable tbody tr:hover { background-color: #1e293b !important; }
+    .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #94a3b8 !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button { color: #94a3b8 !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #0ea5e9 !important; color: #fff !important; border: none; }
+    .shiny-notification { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; }
+    .tab-content { padding-top: 12px; }
+    .nav-tabs .nav-link { color: #94a3b8; border: none; border-bottom: 2px solid transparent; }
+    .nav-tabs .nav-link:hover { color: #e2e8f0; border-bottom-color: #334155; }
+    .nav-tabs .nav-link.active { color: #0ea5e9; background: transparent; border-bottom-color: #0ea5e9; }
+    hr { border-color: #334155; }
+    .text-muted { color: #64748b !important; }
+    .selectize-input { background: #0f172a !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 8px; }
+    .selectize-dropdown { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
+    .selectize-dropdown .active { background: #0ea5e9; color: #fff; }
+  "))),
+  
+  uiOutput("tab_content")
 )
 
 # ============================================================
 # SERVER
 # ============================================================
 server <- function(input, output, session) {
+  
+  # ---- DYNAMIC TAB CONTENT ----
+  output$tab_content <- renderUI({
+    tab <- req(input$tabs)
+    if (tab == "import") {
+      layout_column_wrap(
+        width = 1/2,
+        card(
+          card_header(tags$span(icon("upload"), " Upload Data")),
+          fileInput("file_upload", "Choose CSV or Excel file",
+                    accept = c(".csv", ".xlsx", ".xls")),
+          tags$hr(),
+          actionButton("load_sample", "Load Sample Data",
+                       icon = icon("database"), class = "btn-success w-100"),
+          tags$hr(),
+          tags$h6("Paste Data (Tab-separated)"),
+          tags$textarea(
+            id = "paste_data", rows = 6,
+            style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px;",
+            placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
+          ),
+          actionButton("parse_paste", "Parse Pasted Data",
+                       icon = icon("clipboard"), class = "btn-primary w-100 mt-2")
+        ),
+        card(
+          card_header(tags$span(icon("table"), " Data Preview")),
+          uiOutput("data_summary_info"),
+          DT::dataTableOutput("preview_table")
+        )
+      )
+    } else if (tab == "outliers") {
+      layout_column_wrap(
+        width = 1/3,
+        card(
+          card_header(tags$span(icon("sliders"), " Configuration")),
+          selectInput("outlier_cols", "Select Columns", choices = NULL, multiple = TRUE),
+          numericInput("iqr_multiplier", "IQR Multiplier (k)", value = 1.5, min = 0.5, max = 5, step = 0.1),
+          tags$p(class = "text-muted", style = "font-size: 11px;",
+                 "k=1.5: Standard outliers | k=3.0: Extreme outliers"),
+          actionButton("detect_outliers", "Detect Outliers",
+                       icon = icon("magnifying-glass"), class = "btn-primary w-100"),
+          tags$hr(),
+          uiOutput("outlier_summary_box")
+        ),
+        card(
+          card_header(tags$span(icon("chart-column"), " Boxplot Visualization")),
+          full_screen = TRUE,
+          plotlyOutput("boxplot_chart", height = "400px"),
+          tags$hr(),
+          tags$h6("Outlier Details"),
+          DT::dataTableOutput("outlier_table")
+        )
+      )
+    } else if (tab == "anova") {
+      layout_column_wrap(
+        width = 1/3,
+        card(
+          card_header(tags$span(icon("calculator"), " ANOVA Configuration")),
+          selectInput("anova_value_col", "Numeric Variable", choices = NULL),
+          selectInput("anova_group_col", "Grouping Variable", choices = NULL),
+          actionButton("run_anova", "Run ANOVA",
+                       icon = icon("play"), class = "btn-primary w-100"),
+          tags$hr(),
+          uiOutput("anova_interpretation")
+        ),
+        card(
+          card_header(tags$span(icon("chart-bar"), " ANOVA Results")),
+          full_screen = TRUE,
+          navset_card_tab(
+            nav_panel("ANOVA Table", DT::dataTableOutput("anova_result_table")),
+            nav_panel("Tukey HSD", DT::dataTableOutput("tukey_table")),
+            nav_panel("Group Comparison Plot", plotlyOutput("anova_plot", height = "450px"))
+          )
+        )
+      )
+    } else if (tab == "cleaning") {
+      layout_column_wrap(
+        width = 1/3,
+        card(
+          card_header(tags$span(icon("broom"), " Cleaning Options")),
+          selectInput("clean_cols", "Columns to Clean", choices = NULL, multiple = TRUE),
+          numericInput("clean_iqr_k", "IQR Multiplier (k)", value = 1.5, min = 0.5, max = 5, step = 0.1),
+          radioButtons("clean_method", "Cleaning Method",
+                       choices = c(
+                         "Remove Outlier Rows" = "remove",
+                         "Cap to IQR Bounds (Winsorize)" = "cap",
+                         "Replace with NA" = "na"
+                       ), selected = "cap"),
+          actionButton("apply_cleaning", "Apply Cleaning",
+                       icon = icon("wand-magic-sparkles"), class = "btn-warning w-100"),
+          tags$hr(),
+          tags$h6("Export Cleaned Data"),
+          downloadButton("download_csv", "Download CSV", class = "btn-success w-100 mb-2"),
+          downloadButton("download_xlsx", "Download Excel", class = "btn-primary w-100"),
+          tags$hr(),
+          uiOutput("cleaning_summary")
+        ),
+        card(
+          card_header(tags$span(icon("table"), " Cleaned Data Preview")),
+          DT::dataTableOutput("cleaned_table")
+        )
+      )
+    }
+  })
   
   # Reactive: raw uploaded data
   raw_data <- reactiveVal(NULL)
@@ -412,32 +434,36 @@ server <- function(input, output, session) {
     req(raw_data())
     d <- raw_data()
     num_cols <- get_numeric_cols(d)
-    tags$div(
-      class = "row",
-      tags$div(class = "col-sm-3",
-               tags$div(class = "info-box bg-aqua",
-                        tags$span(class = "info-box-icon", icon("table")),
-                        tags$div(class = "info-box-content",
-                                 tags$span(class = "info-box-text", "Rows"),
-                                 tags$span(class = "info-box-number", nrow(d))))),
-      tags$div(class = "col-sm-3",
-               tags$div(class = "info-box bg-green",
-                        tags$span(class = "info-box-icon", icon("columns")),
-                        tags$div(class = "info-box-content",
-                                 tags$span(class = "info-box-text", "Columns"),
-                                 tags$span(class = "info-box-number", ncol(d))))),
-      tags$div(class = "col-sm-3",
-               tags$div(class = "info-box bg-yellow",
-                        tags$span(class = "info-box-icon", icon("hashtag")),
-                        tags$div(class = "info-box-content",
-                                 tags$span(class = "info-box-text", "Numeric"),
-                                 tags$span(class = "info-box-number", length(num_cols))))),
-      tags$div(class = "col-sm-3",
-               tags$div(class = "info-box bg-red",
-                        tags$span(class = "info-box-icon", icon("exclamation-triangle")),
-                        tags$div(class = "info-box-content",
-                                 tags$span(class = "info-box-text", "Missing"),
-                                 tags$span(class = "info-box-number", sum(is.na(d))))))
+    layout_column_wrap(
+      width = 1/4,
+      value_box(
+        title = "Rows",
+        value = nrow(d),
+        showcase = icon("table"),
+        theme = "primary",
+        class = "value-box"
+      ),
+      value_box(
+        title = "Columns",
+        value = ncol(d),
+        showcase = icon("columns"),
+        theme = "success",
+        class = "value-box"
+      ),
+      value_box(
+        title = "Numeric",
+        value = length(num_cols),
+        showcase = icon("hashtag"),
+        theme = "warning",
+        class = "value-box"
+      ),
+      value_box(
+        title = "Missing",
+        value = sum(is.na(d)),
+        showcase = icon("triangle-exclamation"),
+        theme = if (sum(is.na(d)) > 0) "danger" else "secondary",
+        class = "value-box"
+      )
     )
   })
   
