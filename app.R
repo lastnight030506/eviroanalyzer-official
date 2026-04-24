@@ -225,8 +225,9 @@ ui <- page_sidebar(
     .dataTables_scrollHead { border-bottom: 1px solid #293548 !important; }
     .dataTables_scrollBody { overflow-x: auto !important; overflow-y: auto !important; }
     .dataTables_scrollHeadInner { width: 100% !important; }
-    table.dataTable thead th { background: #0f172a !important; color: #94a3b8 !important; border-bottom: 1px solid #293548 !important; font-weight: 600; font-size: 12px; }
-    table.dataTable tbody td { border-bottom: 1px solid #293548 !important; }
+    table.dataTable { color: #e2e8f0 !important; }
+    table.dataTable thead th { background: #0f172a !important; color: #e2e8f0 !important; border-bottom: 1px solid #293548 !important; font-weight: 600; font-size: 13px; }
+    table.dataTable tbody td { border-bottom: 1px solid #293548 !important; color: #e2e8f0 !important; }
     table.dataTable tbody tr:hover td { background: #172033 !important; }
     table.dataTable tbody tr.odd { background-color: rgba(15,23,42,0.3) !important; }
     table.dataTable tbody tr.odd:hover { background-color: #172033 !important; }
