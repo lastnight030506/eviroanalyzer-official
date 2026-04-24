@@ -106,6 +106,165 @@ get_factor_cols <- function(data) {
 }
 
 # ============================================================
+# HYPOTHESIS TESTING FUNCTIONS
+# ============================================================
+
+#' Chi-square Test of Independence
+#' @param data data.frame
+#' @param var1 categorical column 1
+#' @param var2 categorical column 2
+#' @return list with table, test_result, plot_data
+run_chi_square <- function(data, var1, var2) {
+  tbl <- table(data[[var1]], data[[var2]])
+  test <- stats::chisq.test(tbl)
+  expected <- test$expected
+  
+  list(
+    observed = as.data.frame.matrix(tbl),
+    expected = as.data.frame.matrix(expected),
+    statistic = test$statistic,
+    df = test$parameter,
+    p_value = test$p.value,
+    method = "Chi-square Test of Independence"
+  )
+}
+
+#' Independent T-test with Levene's check
+#' @param data data.frame
+#' @param value_col numeric column
+#' @param group_col binary grouping column
+#' @return list with test results
+run_ttest_independent <- function(data, value_col, group_col) {
+  vals <- data[[value_col]]
+  grp <- data[[group_col]]
+  
+  # Levene's test (using car::leveneTest or manual)
+  grp_levels <- unique(grp[!is.na(grp)])
+  if (length(grp_levels) != 2) stop("Grouping variable must have exactly 2 levels")
+  
+  g1 <- vals[grp == grp_levels[1] & !is.na(vals)]
+  g2 <- vals[grp == grp_levels[2] & !is.na(vals)]
+  
+  # Manual Levene: absolute deviations from median
+  med1 <- median(g1, na.rm = TRUE)
+  med2 <- median(g2, na.rm = TRUE)
+  dev1 <- abs(g1 - med1)
+  dev2 <- abs(g2 - med2)
+  levene_f <- stats::var.test(dev1, dev2)$statistic
+  levene_p <- stats::var.test(dev1, dev2)$p.value
+  
+  var_equal <- levene_p > 0.05
+  
+  test <- stats::t.test(vals ~ grp, data = data, var.equal = var_equal)
+  
+  list(
+    method = if (var_equal) "Independent T-test (equal variance)" else "Independent T-test (Welch's)",
+    statistic = test$statistic,
+    df = test$parameter,
+    p_value = test$p.value,
+    mean_g1 = mean(g1, na.rm = TRUE),
+    mean_g2 = mean(g2, na.rm = TRUE),
+    sd_g1 = stats::sd(g1, na.rm = TRUE),
+    sd_g2 = stats::sd(g2, na.rm = TRUE),
+    levene_p = levene_p,
+    var_equal = var_equal,
+    g1_name = as.character(grp_levels[1]),
+    g2_name = as.character(grp_levels[2])
+  )
+}
+
+#' Paired T-test
+#' @param data data.frame
+#' @param before_col numeric column (before)
+#' @param after_col numeric column (after)
+#' @return list with test results
+run_ttest_paired <- function(data, before_col, after_col) {
+  before <- data[[before_col]]
+  after <- data[[after_col]]
+  
+  test <- stats::t.test(before, after, paired = TRUE)
+  diff <- before - after
+  
+  list(
+    method = "Paired T-test",
+    statistic = test$statistic,
+    df = test$parameter,
+    p_value = test$p.value,
+    mean_before = mean(before, na.rm = TRUE),
+    mean_after = mean(after, na.rm = TRUE),
+    mean_diff = mean(diff, na.rm = TRUE),
+    sd_diff = stats::sd(diff, na.rm = TRUE)
+  )
+}
+
+#' Shapiro-Wilk Normality Test
+#' @param x numeric vector
+#' @return list with statistic, p_value, is_normal
+run_shapiro_test <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) < 3 || length(x) > 5000) {
+    return(list(statistic = NA, p_value = NA, is_normal = NA, note = "Sample size must be 3-5000"))
+  }
+  test <- stats::shapiro.test(x)
+  list(
+    statistic = test$statistic,
+    p_value = test$p.value,
+    is_normal = test$p.value > 0.05,
+    note = NULL
+  )
+}
+
+#' Generate Q-Q plot data
+#' @param x numeric vector
+#' @return ggplot object
+make_qq_plot <- function(x, title = "Q-Q Plot") {
+  x <- x[!is.na(x)]
+  df <- data.frame(sample = x)
+  ggplot2::ggplot(df, ggplot2::aes(sample = sample)) +
+    ggplot2::stat_qq(alpha = 0.7, color = "#0ea5e9", size = 2) +
+    ggplot2::stat_qq_line(color = "#ef4444", linetype = "dashed", size = 1) +
+    ggplot2::theme_minimal(base_size = 13) +
+    ggplot2::theme(
+      plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+      panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+      plot.title = ggplot2::element_text(color = "#e2e8f0"),
+      axis.text = ggplot2::element_text(color = "#94a3b8"),
+      axis.title = ggplot2::element_text(color = "#94a3b8"),
+      panel.grid.major = ggplot2::element_line(color = "#334155"),
+      panel.grid.minor = ggplot2::element_line(color = "#1e293b")
+    ) +
+    ggplot2::labs(title = title, x = "Theoretical Quantiles", y = "Sample Quantiles")
+}
+
+#' Correlation matrix with heatmap data
+#' @param data data.frame
+#' @param cols numeric columns
+#' @return list with matrix, p_values
+run_correlation <- function(data, cols) {
+  df <- data[, cols, drop = FALSE]
+  df <- df[sapply(df, is.numeric)]
+  
+  cor_mat <- stats::cor(df, use = "pairwise.complete.obs")
+  
+  # p-values
+  p_mat <- matrix(NA, ncol = ncol(cor_mat), nrow = nrow(cor_mat))
+  for (i in seq_len(ncol(df))) {
+    for (j in seq_len(ncol(df))) {
+      if (i != j) {
+        test <- stats::cor.test(df[[i]], df[[j]])
+        p_mat[i, j] <- test$p.value
+      } else {
+        p_mat[i, j] <- 0
+      }
+    }
+  }
+  colnames(p_mat) <- colnames(cor_mat)
+  rownames(p_mat) <- rownames(cor_mat)
+  
+  list(correlation = cor_mat, p_values = p_mat)
+}
+
+# ============================================================
 # THEME & UI
 # ============================================================
 dark_theme <- bs_theme(
@@ -152,7 +311,8 @@ ui <- page_sidebar(
       nav_panel("Data Import", value = "import", icon = icon("upload")),
       nav_panel("Outlier Detection", value = "outliers", icon = icon("magnifying-glass")),
       nav_panel("ANOVA Analysis", value = "anova", icon = icon("chart-column")),
-      nav_panel("Data Cleaning", value = "cleaning", icon = icon("filter"))
+      nav_panel("Data Cleaning", value = "cleaning", icon = icon("filter")),
+      nav_panel("Statistical Inference", value = "hypothesis", icon = icon("flask"))
     ),
     tags$hr(style = "border-color: #334155;"),
     tags$div(
@@ -275,7 +435,79 @@ ui <- page_sidebar(
     /* Ensure inputs are visible */
     .shiny-input-container { position: relative; z-index: 5; }
     .selectize-control { position: relative; z-index: 10; }
+    /* Hypothesis testing cards */
+    .hypothesis-card { background: #1a1f2c !important; border: 1px solid #334155; position: relative; z-index: 1; }
+    .hypothesis-card .card-body { background: #1a1f2c !important; }
+    .hypothesis-card .selectize-input { background: #0f172a !important; z-index: 10; position: relative; }
+    .hypothesis-card .selectize-dropdown { z-index: 100; }
+    .hypothesis-card .form-control { background: #0f172a !important; position: relative; z-index: 5; }
+    .hypothesis-table-container { width: 100%; overflow: hidden; }
+    .hypothesis-table-container .dataTables_wrapper { width: 100% !important; }
+    .hypothesis-table-container table.dataTable { table-layout: fixed !important; width: 100% !important; color: #e2e8f0 !important; }
+    .hypothesis-table-container table.dataTable th { background: #0f172a !important; color: #e2e8f0 !important; border-bottom: 1px solid #293548 !important; }
+    .hypothesis-table-container table.dataTable td { border-bottom: 1px solid #293548 !important; color: #e2e8f0 !important; }
   "))),
+  
+  # ---- TAB: HYPOTHESIS TESTING ----
+  conditionalPanel(
+    condition = "input.tabs == 'hypothesis'",
+    style = "position: relative; z-index: 1;",
+    uiOutput("hypothesis_no_data"),
+    conditionalPanel(
+      condition = "input.hypothesis_value_col != null || input.hypothesis_cat1 != null",
+      layout_columns(
+        col_widths = c(3, 9),
+        card(
+          class = "hypothesis-card",
+          card_header(tags$span(icon("flask"), " Test Configuration")),
+          selectInput("hypothesis_test_type", "Select Test",
+                      choices = c(
+                        "Normality Check" = "normality",
+                        "Independent T-test" = "ttest_ind",
+                        "Paired T-test" = "ttest_paired",
+                        "Chi-square Test" = "chisq",
+                        "Correlation Heatmap" = "correlation"
+                      ), selected = "normality"),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'normality'",
+            selectInput("hypothesis_value_col", "Numeric Variable", choices = NULL)
+          ),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'ttest_ind'",
+            selectInput("ttest_value_col", "Numeric Variable", choices = NULL),
+            selectInput("ttest_group_col", "Grouping Variable (2 levels)", choices = NULL)
+          ),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'ttest_paired'",
+            selectInput("ttest_before", "Before Measurement", choices = NULL),
+            selectInput("ttest_after", "After Measurement", choices = NULL)
+          ),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'chisq'",
+            selectInput("chisq_var1", "Variable 1", choices = NULL),
+            selectInput("chisq_var2", "Variable 2", choices = NULL)
+          ),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'correlation'",
+            selectInput("corr_cols", "Select Numeric Variables", choices = NULL, multiple = TRUE)
+          ),
+          actionButton("run_hypothesis", "Run Test",
+                       icon = icon("play"), class = "btn-primary w-100 mt-2")
+        ),
+        card(
+          class = "hypothesis-card",
+          card_header(tags$span(icon("chart-bar"), " Results")),
+          full_screen = TRUE,
+          uiOutput("hypothesis_summary"),
+          tags$hr(),
+          navset_card_tab(
+            nav_panel("Summary Table", DT::dataTableOutput("hypothesis_table")),
+            nav_panel("Visualization", plotlyOutput("hypothesis_plot", height = "500px"))
+          )
+        )
+      )
+    )
+  ),
   
   # ---- TAB: DATA IMPORT ----
   conditionalPanel(
@@ -440,6 +672,15 @@ server <- function(input, output, session) {
     )
   })
   
+  output$hypothesis_no_data <- renderUI({
+    req(is.null(raw_data()))
+    tags$div(class = "no-data-warning",
+             tags$div(icon("file-circle-question", class = "fa-3x")),
+             tags$h4("No Data Loaded"),
+             tags$p("Import data first using the Data Import tab.")
+    )
+  })
+  
   output$cleaning_no_data <- renderUI({
     req(is.null(raw_data()))
     tags$div(class = "no-data-warning",
@@ -460,6 +701,9 @@ server <- function(input, output, session) {
   
   # Reactive: ANOVA results
   anova_results <- reactiveVal(NULL)
+  
+  # Reactive: Hypothesis test results
+  hypothesis_results <- reactiveVal(NULL)
   
   # Reactive: sheets data (list of dataframes)
   sheets_data <- reactiveVal(list())
@@ -585,11 +829,22 @@ server <- function(input, output, session) {
   update_column_selectors <- function(data) {
     num_cols <- get_numeric_cols(data)
     fac_cols <- get_factor_cols(data)
+    all_cols <- names(data)
     
     updateSelectInput(session, "outlier_cols", choices = num_cols, selected = num_cols[1:min(3, length(num_cols))])
     updateSelectInput(session, "clean_cols", choices = num_cols, selected = num_cols[1:min(3, length(num_cols))])
     updateSelectInput(session, "anova_value_col", choices = num_cols, selected = num_cols[1])
     updateSelectInput(session, "anova_group_col", choices = c(fac_cols, num_cols), selected = if (length(fac_cols) > 0) fac_cols[length(fac_cols)] else num_cols[1])
+    
+    # Hypothesis testing inputs
+    updateSelectInput(session, "hypothesis_value_col", choices = num_cols, selected = if (length(num_cols) > 0) num_cols[1] else NULL)
+    updateSelectInput(session, "ttest_value_col", choices = num_cols, selected = if (length(num_cols) > 0) num_cols[1] else NULL)
+    updateSelectInput(session, "ttest_group_col", choices = c(fac_cols, num_cols), selected = if (length(fac_cols) > 0) fac_cols[1] else if (length(num_cols) > 0) num_cols[1] else NULL)
+    updateSelectInput(session, "ttest_before", choices = num_cols, selected = if (length(num_cols) > 0) num_cols[1] else NULL)
+    updateSelectInput(session, "ttest_after", choices = num_cols, selected = if (length(num_cols) > 1) num_cols[2] else if (length(num_cols) > 0) num_cols[1] else NULL)
+    updateSelectInput(session, "chisq_var1", choices = all_cols, selected = if (length(all_cols) > 0) all_cols[1] else NULL)
+    updateSelectInput(session, "chisq_var2", choices = all_cols, selected = if (length(all_cols) > 1) all_cols[2] else if (length(all_cols) > 0) all_cols[1] else NULL)
+    updateSelectInput(session, "corr_cols", choices = num_cols, selected = num_cols[1:min(4, length(num_cols))])
   }
   
   # ---- UPLOAD ZONE UI ----
@@ -921,6 +1176,249 @@ server <- function(input, output, session) {
                "No significant difference between groups at alpha = 0.05.")
       }
     )
+  })
+  
+  # ---- HYPOTHESIS TESTING ----
+  observeEvent(input$run_hypothesis, {
+    req(raw_data())
+    data <- raw_data()
+    test_type <- input$hypothesis_test_type
+    
+    result <- tryCatch({
+      if (test_type == "normality") {
+        req(input$hypothesis_value_col)
+        x <- data[[input$hypothesis_value_col]]
+        sw <- run_shapiro_test(x)
+        list(
+          type = "normality",
+          test_name = "Shapiro-Wilk Normality Test",
+          variable = input$hypothesis_value_col,
+          statistic = sw$statistic,
+          df = length(x[!is.na(x)]),
+          p_value = sw$p_value,
+          interpretation = if (is.na(sw$p_value)) "N/A" else if (sw$is_normal) "Data appears normally distributed (p > 0.05)" else "Data deviates from normality (p <= 0.05)",
+          is_significant = !sw$is_normal,
+          plot = make_qq_plot(x, paste("Q-Q Plot:", input$hypothesis_value_col))
+        )
+      } else if (test_type == "ttest_ind") {
+        req(input$ttest_value_col, input$ttest_group_col)
+        res <- run_ttest_independent(data, input$ttest_value_col, input$ttest_group_col)
+        list(
+          type = "ttest_ind",
+          test_name = res$method,
+          variable = input$ttest_value_col,
+          group = input$ttest_group_col,
+          statistic = res$statistic,
+          df = res$df,
+          p_value = res$p_value,
+          interpretation = if (res$p_value < 0.05) "Significant difference between groups" else "No significant difference between groups",
+          is_significant = res$p_value < 0.05,
+          levene_p = res$levene_p,
+          mean_g1 = res$mean_g1,
+          mean_g2 = res$mean_g2,
+          g1_name = res$g1_name,
+          g2_name = res$g2_name,
+          plot_data = data %>% dplyr::select(dplyr::all_of(c(input$ttest_value_col, input$ttest_group_col))) %>% tidyr::drop_na()
+        )
+      } else if (test_type == "ttest_paired") {
+        req(input$ttest_before, input$ttest_after)
+        res <- run_ttest_paired(data, input$ttest_before, input$ttest_after)
+        list(
+          type = "ttest_paired",
+          test_name = res$method,
+          before = input$ttest_before,
+          after = input$ttest_after,
+          statistic = res$statistic,
+          df = res$df,
+          p_value = res$p_value,
+          interpretation = if (res$p_value < 0.05) "Significant difference between before/after" else "No significant difference between before/after",
+          is_significant = res$p_value < 0.05,
+          mean_before = res$mean_before,
+          mean_after = res$mean_after,
+          plot_data = data %>% dplyr::select(dplyr::all_of(c(input$ttest_before, input$ttest_after))) %>% tidyr::drop_na()
+        )
+      } else if (test_type == "chisq") {
+        req(input$chisq_var1, input$chisq_var2)
+        res <- run_chi_square(data, input$chisq_var1, input$chisq_var2)
+        list(
+          type = "chisq",
+          test_name = res$method,
+          var1 = input$chisq_var1,
+          var2 = input$chisq_var2,
+          statistic = res$statistic,
+          df = res$df,
+          p_value = res$p_value,
+          interpretation = if (res$p_value < 0.05) "Variables are significantly associated" else "No significant association between variables",
+          is_significant = res$p_value < 0.05,
+          observed = res$observed,
+          expected = res$expected
+        )
+      } else if (test_type == "correlation") {
+        req(input$corr_cols)
+        res <- run_correlation(data, input$corr_cols)
+        list(
+          type = "correlation",
+          test_name = "Pearson Correlation Matrix",
+          variables = input$corr_cols,
+          cor_matrix = res$correlation,
+          p_matrix = res$p_values
+        )
+      }
+    }, error = function(e) {
+      showNotification(paste("Test error:", e$message), type = "error")
+      NULL
+    })
+    
+    hypothesis_results(result)
+    if (!is.null(result)) {
+      showNotification(paste(result$test_name, "complete!"), type = "message")
+    }
+  })
+  
+  output$hypothesis_summary <- renderUI({
+    req(hypothesis_results())
+    res <- hypothesis_results()
+    
+    sig_color <- if (res$is_significant) "#ef4444" else "#10b981"
+    sig_icon <- if (res$is_significant) "circle-xmark" else "circle-check"
+    
+    tags$div(
+      style = "display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;",
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("vial")),
+               tags$div(tags$div(class = "stat-label", "Test"),
+                        tags$div(class = "stat-value", style = "font-size: 13px;", res$test_name))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("chart-line")),
+               tags$div(tags$div(class = "stat-label", "Statistic"),
+                        tags$div(class = "stat-value", if (!is.null(res$statistic)) round(res$statistic, 3) else "N/A"))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("hashtag")),
+               tags$div(tags$div(class = "stat-label", "df"),
+                        tags$div(class = "stat-value", if (!is.null(res$df)) res$df else "N/A"))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon(sig_icon)),
+               tags$div(tags$div(class = "stat-label", "P-value"),
+                        tags$div(class = "stat-value", style = paste0("color:", sig_color, ";"), if (!is.null(res$p_value)) formatC(res$p_value, format = "e", digits = 2) else "N/A")))
+    )
+  })
+  
+  output$hypothesis_table <- DT::renderDataTable({
+    req(hypothesis_results())
+    res <- hypothesis_results()
+    
+    df <- data.frame(
+      Metric = c("Test", "Variable(s)", "Statistic", "df", "P-value", "Interpretation"),
+      Value = c(
+        res$test_name,
+        if (!is.null(res$variable)) res$variable else if (!is.null(res$variables)) paste(res$variables, collapse = ", ") else paste(res$var1, "vs", res$var2),
+        if (!is.null(res$statistic)) round(res$statistic, 4) else "N/A",
+        if (!is.null(res$df)) as.character(res$df) else "N/A",
+        if (!is.null(res$p_value)) formatC(res$p_value, format = "e", digits = 3) else "N/A",
+        res$interpretation
+      ),
+      stringsAsFactors = FALSE
+    )
+    
+    DT::datatable(df, options = list(dom = "t", ordering = FALSE), rownames = FALSE, class = "compact row-border") %>%
+      DT::formatStyle("Value", color = "#e2e8f0")
+  })
+  
+  output$hypothesis_plot <- renderPlotly({
+    req(hypothesis_results())
+    res <- hypothesis_results()
+    
+    if (res$type == "normality") {
+      plotly::ggplotly(res$plot, tooltip = c("x", "y")) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    } else if (res$type == "ttest_ind") {
+      pd <- res$plot_data
+      colnames(pd) <- c("Value", "Group")
+      p <- ggplot2::ggplot(pd, ggplot2::aes(x = Group, y = Value, fill = Group)) +
+        ggplot2::geom_violin(alpha = 0.5, color = NA) +
+        ggplot2::geom_boxplot(alpha = 0.7, width = 0.2, outlier.colour = "#ef4444", outlier.size = 2) +
+        ggplot2::geom_jitter(width = 0.1, alpha = 0.3, size = 1.5, color = "#e2e8f0") +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+          legend.position = "none",
+          plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          plot.title = ggplot2::element_text(color = "#e2e8f0"),
+          axis.text = ggplot2::element_text(color = "#94a3b8"),
+          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          panel.grid.major = ggplot2::element_line(color = "#334155"),
+          panel.grid.minor = ggplot2::element_line(color = "#1e293b")
+        ) +
+        ggplot2::labs(title = paste("Distribution by Group:", res$variable), y = res$variable)
+      plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    } else if (res$type == "ttest_paired") {
+      pd <- res$plot_data
+      colnames(pd) <- c("Before", "After")
+      pd_long <- tidyr::pivot_longer(pd, cols = dplyr::everything(), names_to = "Time", values_to = "Value")
+      p <- ggplot2::ggplot(pd_long, ggplot2::aes(x = Time, y = Value, fill = Time)) +
+        ggplot2::geom_violin(alpha = 0.5, color = NA) +
+        ggplot2::geom_boxplot(alpha = 0.7, width = 0.2, outlier.colour = "#ef4444", outlier.size = 2) +
+        ggplot2::geom_jitter(width = 0.1, alpha = 0.3, size = 1.5, color = "#e2e8f0") +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+          legend.position = "none",
+          plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          plot.title = ggplot2::element_text(color = "#e2e8f0"),
+          axis.text = ggplot2::element_text(color = "#94a3b8"),
+          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          panel.grid.major = ggplot2::element_line(color = "#334155"),
+          panel.grid.minor = ggplot2::element_line(color = "#1e293b")
+        ) +
+        ggplot2::labs(title = "Paired Comparison", y = "Value")
+      plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    } else if (res$type == "chisq") {
+      obs <- res$observed
+      obs$Var1 <- rownames(obs)
+      obs_long <- tidyr::pivot_longer(obs, cols = -Var1, names_to = "Var2", values_to = "Count")
+      p <- ggplot2::ggplot(obs_long, ggplot2::aes(x = Var1, y = Count, fill = Var2)) +
+        ggplot2::geom_bar(stat = "identity", position = "dodge", alpha = 0.8, color = NA) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+          plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          plot.title = ggplot2::element_text(color = "#e2e8f0"),
+          axis.text = ggplot2::element_text(color = "#94a3b8"),
+          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          legend.text = ggplot2::element_text(color = "#94a3b8"),
+          legend.title = ggplot2::element_text(color = "#94a3b8"),
+          panel.grid.major = ggplot2::element_line(color = "#334155"),
+          panel.grid.minor = ggplot2::element_line(color = "#1e293b")
+        ) +
+        ggplot2::labs(title = paste("Grouped Bar Chart:", res$var1, "vs", res$var2), x = res$var1, fill = res$var2) +
+        ggplot2::scale_fill_brewer(palette = "Set2")
+      plotly::ggplotly(p, tooltip = c("x", "y", "fill")) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    } else if (res$type == "correlation") {
+      cor_df <- as.data.frame(res$cor_matrix)
+      cor_df$Var1 <- rownames(cor_df)
+      cor_long <- tidyr::pivot_longer(cor_df, cols = -Var1, names_to = "Var2", values_to = "Correlation")
+      p <- ggplot2::ggplot(cor_long, ggplot2::aes(x = Var1, y = Var2, fill = Correlation)) +
+        ggplot2::geom_tile(color = "#334155", size = 0.5) +
+        ggplot2::geom_text(ggplot2::aes(label = round(Correlation, 2)), color = "#e2e8f0", size = 3.5) +
+        ggplot2::scale_fill_gradient2(low = "#ef4444", mid = "#1e293b", high = "#10b981", midpoint = 0, limits = c(-1, 1)) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+          plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+          plot.title = ggplot2::element_text(color = "#e2e8f0"),
+          axis.text = ggplot2::element_text(color = "#94a3b8"),
+          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          legend.text = ggplot2::element_text(color = "#94a3b8"),
+          legend.title = ggplot2::element_text(color = "#94a3b8"),
+          panel.grid = ggplot2::element_blank()
+        ) +
+        ggplot2::labs(title = "Correlation Heatmap", x = NULL, y = NULL)
+      plotly::ggplotly(p, tooltip = c("x", "y", "fill")) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    }
   })
   
   # ---- DATA CLEANING ----
