@@ -201,6 +201,29 @@ ui <- page_sidebar(
     .text-muted { color: #64748b !important; }
     textarea { width: 100% !important; box-sizing: border-box; }
     .plotly { width: 100% !important; }
+    /* Upload drop zone */
+    .upload-zone { border: 2px dashed #334155; border-radius: 12px; padding: 24px; text-align: center; transition: all 0.2s ease; cursor: pointer; }
+    .upload-zone:hover { border-color: #0ea5e9; background: #0f172a; }
+    .upload-zone.has-file { border-color: #10b981; background: #064e3b; }
+    .upload-zone .btn-file { background: transparent; border: none; color: #94a3b8; }
+    /* Stat badges */
+    .stat-badge { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 100px; }
+    .stat-badge .stat-icon { font-size: 14px; color: #64748b; }
+    .stat-badge .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-badge .stat-value { font-size: 16px; font-weight: 700; color: #e2e8f0; }
+    /* Sheet tabs */
+    .sheet-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+    .sheet-tab { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; }
+    .sheet-tab:hover { background: #1e293b; color: #e2e8f0; }
+    .sheet-tab.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; border-color: transparent; font-weight: 600; }
+    /* rhandsontable dark */
+    .handsontable .htCore td { background: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+    .handsontable .htCore th { background: #0f172a !important; color: #94a3b8 !important; border-color: #334155 !important; }
+    .handsontable .htCore tr:hover td { background: #0f172a !important; }
+    .handsontable .wtHider { width: 100% !important; }
+    .htContainer { width: 100% !important; }
+    /* Progress bar */
+    .shiny-file-input-progress { display: none; }
   "))),
   
   uiOutput("tab_content")
@@ -219,25 +242,27 @@ server <- function(input, output, session) {
         col_widths = c(4, 8),
         card(
           card_header(tags$span(icon("upload"), " Upload Data")),
-          fileInput("file_upload", "Choose CSV or Excel file",
-                    accept = c(".csv", ".xlsx", ".xls")),
+          uiOutput("upload_zone_ui"),
           tags$hr(),
-          actionButton("load_sample", "Load Sample Data",
-                       icon = icon("database"), class = "btn-success w-100"),
-          tags$hr(),
+          actionButton("load_sample", tags$span(icon("database"), " Load Sample"),
+                       class = "btn-outline-success w-100 mb-2"),
           tags$h6("Paste Data (Tab-separated)"),
           tags$textarea(
-            id = "paste_data", rows = 6,
+            id = "paste_data", rows = 4,
             style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
             placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
           ),
-          actionButton("parse_paste", "Parse Pasted Data",
-                       icon = icon("clipboard"), class = "btn-primary w-100 mt-2")
+          actionButton("parse_paste", tags$span(icon("clipboard"), " Parse"),
+                       class = "btn-outline-primary w-100 mt-2")
         ),
         card(
           card_header(tags$span(icon("table"), " Data Preview")),
+          full_screen = TRUE,
           uiOutput("data_summary_info"),
-          DT::dataTableOutput("preview_table")
+          uiOutput("sheet_tabs_ui"),
+          tags$div(style = "height: 600px; overflow: auto; width: 100%;",
+                   rHandsontableOutput("preview_table", width = "100%", height = "100%")
+          )
         )
       )
     } else if (tab == "outliers") {
@@ -327,26 +352,53 @@ server <- function(input, output, session) {
   # Reactive: ANOVA results
   anova_results <- reactiveVal(NULL)
   
+  # Reactive: sheets data (list of dataframes)
+  sheets_data <- reactiveVal(list())
+  
+  # Reactive: active sheet name
+  active_sheet <- reactiveVal("Sheet 1")
+  
+  # Reactive: uploaded filename
+  uploaded_filename <- reactiveVal(NULL)
+  
   # ---- FILE UPLOAD ----
   observeEvent(input$file_upload, {
     req(input$file_upload)
     ext <- tools::file_ext(input$file_upload$datapath)
+    uploaded_filename(input$file_upload$name)
     
-    tryCatch({
-      data <- if (ext == "csv") {
-        utils::read.csv(input$file_upload$datapath, stringsAsFactors = FALSE)
-      } else if (ext %in% c("xlsx", "xls")) {
-        readxl::read_excel(input$file_upload$datapath) %>% as.data.frame()
-      } else {
-        stop("Unsupported file format. Use CSV or Excel.")
-      }
-      
-      raw_data(data)
-      cleaned_data(data)
-      update_column_selectors(data)
-      showNotification(paste("Loaded", nrow(data), "rows,", ncol(data), "columns"), type = "message")
-    }, error = function(e) {
-      showNotification(paste("Error:", e$message), type = "error")
+    withProgress(message = "Reading file...", value = 0, {
+      tryCatch({
+        if (ext == "csv") {
+          incProgress(0.3, detail = "Parsing CSV")
+          data <- utils::read.csv(input$file_upload$datapath, stringsAsFactors = FALSE)
+          sheets_data(list("Sheet 1" = data))
+          active_sheet("Sheet 1")
+          raw_data(data)
+          cleaned_data(data)
+          update_column_selectors(data)
+          incProgress(0.7, detail = "Done")
+        } else if (ext %in% c("xlsx", "xls")) {
+          incProgress(0.2, detail = "Reading sheets")
+          sheet_names <- readxl::excel_sheets(input$file_upload$datapath)
+          all_sheets <- lapply(sheet_names, function(s) {
+            as.data.frame(readxl::read_excel(input$file_upload$datapath, sheet = s))
+          })
+          names(all_sheets) <- sheet_names
+          sheets_data(all_sheets)
+          active_sheet(sheet_names[1])
+          raw_data(all_sheets[[1]])
+          cleaned_data(all_sheets[[1]])
+          update_column_selectors(all_sheets[[1]])
+          incProgress(0.8, detail = "Done")
+        } else {
+          stop("Unsupported file format. Use CSV or Excel.")
+        }
+        
+        showNotification(paste("Loaded", input$file_upload$name), type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error:", e$message), type = "error")
+      })
     })
   })
   
@@ -375,6 +427,9 @@ server <- function(input, output, session) {
         )
       }
       
+      sheets_data(list("Sheet 1" = data))
+      active_sheet("Sheet 1")
+      uploaded_filename("sample_data.csv")
       raw_data(data)
       cleaned_data(data)
       update_column_selectors(data)
@@ -405,6 +460,9 @@ server <- function(input, output, session) {
         }
       }
       
+      sheets_data(list("Sheet 1" = data))
+      active_sheet("Sheet 1")
+      uploaded_filename("pasted_data")
       raw_data(data)
       cleaned_data(data)
       update_column_selectors(data)
@@ -425,51 +483,93 @@ server <- function(input, output, session) {
     updateSelectInput(session, "anova_group_col", choices = c(fac_cols, num_cols), selected = if (length(fac_cols) > 0) fac_cols[length(fac_cols)] else num_cols[1])
   }
   
-  # ---- DATA PREVIEW ----
-  output$preview_table <- DT::renderDataTable({
-    req(raw_data())
-    DT::datatable(
-      raw_data(),
-      options = list(pageLength = 15, scrollX = TRUE, dom = "frtip"),
-      class = "compact stripe hover",
-      rownames = FALSE
+  # ---- UPLOAD ZONE UI ----
+  output$upload_zone_ui <- renderUI({
+    has_file <- !is.null(uploaded_filename())
+    tags$div(
+      class = paste("upload-zone", if (has_file) "has-file" else ""),
+      if (has_file) {
+        tags$div(
+          tags$div(style = "color: #10b981; font-size: 24px; margin-bottom: 8px;", icon("circle-check")),
+          tags$div(style = "color: #e2e8f0; font-weight: 600;", uploaded_filename()),
+          tags$div(style = "color: #64748b; font-size: 12px; margin-top: 4px;", "File loaded successfully")
+        )
+      } else {
+        tags$div(
+          tags$div(style = "color: #64748b; font-size: 32px; margin-bottom: 8px;", icon("cloud-arrow-up")),
+          tags$div(style = "color: #94a3b8; font-weight: 500;", "Drop file here or click to browse"),
+          tags$div(style = "color: #64748b; font-size: 11px; margin-top: 4px;", "Supports CSV, Excel (.xlsx, .xls)")
+        )
+      },
+      fileInput("file_upload", label = NULL,
+                accept = c(".csv", ".xlsx", ".xls"),
+                buttonLabel = tags$span(icon("folder-open"), " Browse"),
+                placeholder = "No file selected")
     )
+  })
+  
+  # ---- SHEET TABS UI ----
+  output$sheet_tabs_ui <- renderUI({
+    req(sheets_data())
+    sheets <- names(sheets_data())
+    if (length(sheets) <= 1) return(NULL)
+    tags$div(
+      class = "sheet-tabs",
+      lapply(sheets, function(s) {
+        is_active <- s == active_sheet()
+        tags$button(
+          class = paste("sheet-tab", if (is_active) "active" else ""),
+          onclick = sprintf("Shiny.setInputValue('sheet_tab_click', '%s', {priority: 'event'})", s),
+          tags$span(icon("table"), s)
+        )
+      })
+    )
+  })
+  
+  observeEvent(input$sheet_tab_click, {
+    req(input$sheet_tab_click)
+    active_sheet(input$sheet_tab_click)
+    # Also update raw_data to the selected sheet for other tabs
+    df <- sheets_data()[[input$sheet_tab_click]]
+    if (!is.null(df)) {
+      raw_data(df)
+      cleaned_data(df)
+      update_column_selectors(df)
+    }
+  })
+  
+  # ---- DATA PREVIEW ----
+  output$preview_table <- renderRHandsontable({
+    req(sheets_data(), active_sheet())
+    df <- sheets_data()[[active_sheet()]]
+    req(df)
+    rhandsontable(df, stretchH = "all", rowHeaders = TRUE, height = NULL) %>%
+      hot_cols(manualColumnResize = TRUE, columnSorting = TRUE) %>%
+      hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
   })
   
   output$data_summary_info <- renderUI({
     req(raw_data())
     d <- raw_data()
     num_cols <- get_numeric_cols(d)
-    layout_columns(
-      col_widths = c(3, 3, 3, 3),
-      value_box(
-        title = "Rows",
-        value = nrow(d),
-        showcase = icon("table"),
-        theme = "primary",
-        class = "value-box"
-      ),
-      value_box(
-        title = "Columns",
-        value = ncol(d),
-        showcase = icon("columns"),
-        theme = "success",
-        class = "value-box"
-      ),
-      value_box(
-        title = "Numeric",
-        value = length(num_cols),
-        showcase = icon("hashtag"),
-        theme = "warning",
-        class = "value-box"
-      ),
-      value_box(
-        title = "Missing",
-        value = sum(is.na(d)),
-        showcase = icon("triangle-exclamation"),
-        theme = if (sum(is.na(d)) > 0) "danger" else "secondary",
-        class = "value-box"
-      )
+    tags$div(
+      style = "display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;",
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("table")),
+               tags$div(tags$div(class = "stat-label", "Rows"),
+                        tags$div(class = "stat-value", nrow(d)))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("columns")),
+               tags$div(tags$div(class = "stat-label", "Columns"),
+                        tags$div(class = "stat-value", ncol(d)))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("hashtag")),
+               tags$div(tags$div(class = "stat-label", "Numeric"),
+                        tags$div(class = "stat-value", length(num_cols)))),
+      tags$div(class = "stat-badge",
+               tags$span(class = "stat-icon", icon("triangle-exclamation")),
+               tags$div(tags$div(class = "stat-label", "Missing"),
+                        tags$div(class = "stat-value", style = if (sum(is.na(d)) > 0) "color: #ef4444;" else "", sum(is.na(d)))))
     )
   })
   
