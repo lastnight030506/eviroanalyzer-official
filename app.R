@@ -236,49 +236,50 @@ ui <- page_sidebar(
     .preview-card .card-body > div { padding: 0 12px; }
     /* Progress bar */
     .shiny-file-input-progress { display: none; }
+    /* No-data warning */
+    .no-data-warning { text-align: center; padding: 60px 20px; color: #64748b; }
+    .no-data-warning .fa-3x { margin-bottom: 16px; }
   "))),
   
-  uiOutput("tab_content")
-)
-
-# ============================================================
-# SERVER
-# ============================================================
-server <- function(input, output, session) {
-  
-  # ---- DYNAMIC TAB CONTENT ----
-  output$tab_content <- renderUI({
-    tab <- req(input$tabs)
-    if (tab == "import") {
-      layout_columns(
-        col_widths = c(4, 8),
-        card(
-          card_header(tags$span(icon("upload"), " Upload Data")),
-          uiOutput("upload_zone_ui"),
-          tags$hr(),
-          actionButton("load_sample", tags$span(icon("database"), " Load Sample"),
-                       class = "btn-outline-success w-100 mb-2"),
-          tags$h6("Paste Data (Tab-separated)"),
-          tags$textarea(
-            id = "paste_data", rows = 4,
-            style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
-            placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
-          ),
-          actionButton("parse_paste", tags$span(icon("clipboard"), " Parse"),
-                       class = "btn-outline-primary w-100 mt-2")
+  # ---- TAB: DATA IMPORT ----
+  conditionalPanel(
+    condition = "input.tabs == 'import'",
+    layout_columns(
+      col_widths = c(4, 8),
+      card(
+        card_header(tags$span(icon("upload"), " Upload Data")),
+        uiOutput("upload_zone_ui"),
+        tags$hr(),
+        actionButton("load_sample", tags$span(icon("database"), " Load Sample"),
+                     class = "btn-outline-success w-100 mb-2"),
+        tags$h6("Paste Data (Tab-separated)"),
+        tags$textarea(
+          id = "paste_data", rows = 4,
+          style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
+          placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
         ),
-        card(
-          card_header(tags$span(icon("table"), " Data Preview")),
-          full_screen = TRUE,
-          class = "preview-card",
-          uiOutput("data_summary_info"),
-          uiOutput("sheet_tabs_ui"),
-          tags$div(class = "preview-container", style = "height: calc(100vh - 280px); min-height: 300px;",
-                   DT::dataTableOutput("preview_table", width = "100%", height = "100%")
-          )
+        actionButton("parse_paste", tags$span(icon("clipboard"), " Parse"),
+                     class = "btn-outline-primary w-100 mt-2")
+      ),
+      card(
+        card_header(tags$span(icon("table"), " Data Preview")),
+        full_screen = TRUE,
+        class = "preview-card",
+        uiOutput("data_summary_info"),
+        uiOutput("sheet_tabs_ui"),
+        tags$div(class = "preview-container", style = "height: calc(100vh - 280px); min-height: 300px;",
+                 DT::dataTableOutput("preview_table", width = "100%", height = "100%")
         )
       )
-    } else if (tab == "outliers") {
+    )
+  ),
+  
+  # ---- TAB: OUTLIER DETECTION ----
+  conditionalPanel(
+    condition = "input.tabs == 'outliers'",
+    uiOutput("outlier_no_data"),
+    conditionalPanel(
+      condition = "input.outlier_cols != null && input.outlier_cols != ''",
       layout_columns(
         col_widths = c(3, 9),
         card(
@@ -301,7 +302,15 @@ server <- function(input, output, session) {
           DT::dataTableOutput("outlier_table")
         )
       )
-    } else if (tab == "anova") {
+    )
+  ),
+  
+  # ---- TAB: ANOVA ANALYSIS ----
+  conditionalPanel(
+    condition = "input.tabs == 'anova'",
+    uiOutput("anova_no_data"),
+    conditionalPanel(
+      condition = "input.anova_value_col != null && input.anova_value_col != ''",
       layout_columns(
         col_widths = c(3, 9),
         card(
@@ -323,7 +332,15 @@ server <- function(input, output, session) {
           )
         )
       )
-    } else if (tab == "cleaning") {
+    )
+  ),
+  
+  # ---- TAB: DATA CLEANING ----
+  conditionalPanel(
+    condition = "input.tabs == 'cleaning'",
+    uiOutput("cleaning_no_data"),
+    conditionalPanel(
+      condition = "input.clean_cols != null && input.clean_cols != ''",
       layout_columns(
         col_widths = c(4, 8),
         card(
@@ -350,7 +367,41 @@ server <- function(input, output, session) {
           DT::dataTableOutput("cleaned_table")
         )
       )
-    }
+    )
+  )
+)
+
+# ============================================================
+# SERVER
+# ============================================================
+server <- function(input, output, session) {
+  
+  # ---- NO-DATA WARNINGS ----
+  output$outlier_no_data <- renderUI({
+    req(is.null(raw_data()))
+    tags$div(class = "no-data-warning",
+             tags$div(icon("file-circle-question", class = "fa-3x")),
+             tags$h4("No Data Loaded"),
+             tags$p("Import data first using the Data Import tab.")
+    )
+  })
+  
+  output$anova_no_data <- renderUI({
+    req(is.null(raw_data()))
+    tags$div(class = "no-data-warning",
+             tags$div(icon("file-circle-question", class = "fa-3x")),
+             tags$h4("No Data Loaded"),
+             tags$p("Import data first using the Data Import tab.")
+    )
+  })
+  
+  output$cleaning_no_data <- renderUI({
+    req(is.null(raw_data()))
+    tags$div(class = "no-data-warning",
+             tags$div(icon("file-circle-question", class = "fa-3x")),
+             tags$h4("No Data Loaded"),
+             tags$p("Import data first using the Data Import tab.")
+    )
   })
   
   # Reactive: raw uploaded data
