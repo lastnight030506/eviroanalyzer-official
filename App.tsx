@@ -1,10 +1,23 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { StatsProvider } from './components/StatsContext';
+import type { QCVNStandard } from './types';
 
 const Forecast = lazy(() => import('./components/Forecast'));
 const GISMap = lazy(() => import('./components/GISMap'));
 const SPSSPanel = lazy(() => import('./components/SPSSPanel'));
 const RegulationManager = lazy(() => import('./components/RegulationManager'));
+
+// Load/save regulations from localStorage
+const REGS_STORAGE_KEY = 'enviroanalyzer_regulations';
+function loadRegulations(): QCVNStandard[] {
+  try {
+    const stored = localStorage.getItem(REGS_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+}
+function saveRegulations(regs: QCVNStandard[]): void {
+  localStorage.setItem(REGS_STORAGE_KEY, JSON.stringify(regs));
+}
 
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-full">
@@ -25,6 +38,24 @@ function App() {
   const [activeTab, setActiveTab] = useState<'workspace' | 'forecast' | 'gis' | 'settings'>('workspace');
   const [rStatus, setRStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [rVersion, setRVersion] = useState<string | null>(null);
+  const [regulations, setRegulations] = useState<QCVNStandard[]>(loadRegulations);
+
+  // BUG-007 FIX: Regulation handlers with persistence
+  const handleAddRegulation = useCallback((reg: QCVNStandard) => {
+    setRegulations(prev => { const next = [...prev, reg]; saveRegulations(next); return next; });
+  }, []);
+  const handleUpdateRegulation = useCallback((reg: QCVNStandard) => {
+    setRegulations(prev => { const next = prev.map(r => r.id === reg.id ? reg : r); saveRegulations(next); return next; });
+  }, []);
+  const handleDeleteRegulation = useCallback((regId: string) => {
+    setRegulations(prev => { const next = prev.filter(r => r.id !== regId); saveRegulations(next); return next; });
+  }, []);
+  const handleResetRegulations = useCallback(() => {
+    setRegulations([]); saveRegulations([]);
+  }, []);
+  const handleImportRegulations = useCallback((regs: QCVNStandard[]) => {
+    setRegulations(regs); saveRegulations(regs);
+  }, []);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -88,8 +119,10 @@ function App() {
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                   activeTab === 'gis'
                     ? 'bg-white dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 shadow-lg shadow-emerald-500/20'
+                    : rStatus !== 'available'
+                    ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-50'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-700/50'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                }`}
               >
                 <MapIcon /> GIS
               </button>
@@ -136,7 +169,7 @@ function App() {
             {activeTab === 'workspace' && (
               <Suspense fallback={<LoadingFallback />}>
                 <div className="h-full animate-fade-in tab-content-enter">
-                  <SPSSPanel isDarkMode={isDarkMode} />
+                  <SPSSPanel isDarkMode={isDarkMode} rStatus={rStatus} rVersion={rVersion} />
                 </div>
               </Suspense>
             )}
@@ -161,12 +194,12 @@ function App() {
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Settings</h2>
                 <Suspense fallback={<LoadingFallback />}>
                   <RegulationManager
-                    regulations={[]}
-                    onAdd={() => {}}
-                    onUpdate={() => {}}
-                    onDelete={() => {}}
-                    onReset={() => {}}
-                    onImport={() => {}}
+                    regulations={regulations}
+                    onAdd={handleAddRegulation}
+                    onUpdate={handleUpdateRegulation}
+                    onDelete={handleDeleteRegulation}
+                    onReset={handleResetRegulations}
+                    onImport={handleImportRegulations}
                     isDarkMode={isDarkMode}
                   />
                 </Suspense>

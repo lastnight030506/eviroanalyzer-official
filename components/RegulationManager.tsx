@@ -56,6 +56,15 @@ const RegulationManager: React.FC<Props> = ({
   const handleCheckUpdate = async () => {
     setIsCheckingUpdate(true);
     setUpdateError(null);
+
+    // BUG-008 FIX: Check if running in Tauri production environment
+    const isTauri = '__TAURI__' in window;
+    if (!isTauri) {
+      setUpdateError('Auto-update is only available in production builds. Download the latest release from GitHub.');
+      setIsCheckingUpdate(false);
+      return;
+    }
+
     try {
       const status = await checkForUpdates();
       setUpdateStatus(status);
@@ -63,7 +72,8 @@ const RegulationManager: React.FC<Props> = ({
         setUpdateError(status.error);
       }
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : 'Failed to check for updates');
+      const msg = err instanceof Error ? err.message : 'Failed to check for updates';
+      setUpdateError(msg);
     } finally {
       setIsCheckingUpdate(false);
     }
@@ -147,6 +157,11 @@ const RegulationManager: React.FC<Props> = ({
   };
 
   const handleExport = () => {
+    // BUG-009 FIX: Provide feedback when no regulations exist
+    if (regulations.length === 0) {
+      alert('No regulations to export. Add a regulation first.');
+      return;
+    }
     const json = exportRegulationsToJson(regulations);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

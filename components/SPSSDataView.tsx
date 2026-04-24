@@ -30,15 +30,29 @@ const DataView: React.FC<SPSSDataViewProps> = ({ isDarkMode, selectedVariables }
   // Sync from context when File > Open is used
   useEffect(() => {
     const rows = contextDataRows || [];
-    console.log('[DEBUG DataView] useEffect triggered:', { contextDataLoaded, contextVariables: contextVariables?.length || 0, contextDataRows: rows.length });
     if (contextDataLoaded && contextVariables && contextVariables.length > 0) {
-      console.log('[DEBUG DataView] Syncing from context:', contextVariables.length, 'vars,', rows.length, 'rows');
       setLocalVariables(contextVariables);
       if (rows.length > 0) {
         setLocalDataRows(rows);
       }
     }
   }, [contextDataLoaded, contextVariables, contextDataRows]);
+
+  // BUG-001 FIX: Sync local state UP to context so sidebar + forecast see current variables
+  useEffect(() => {
+    if (localVariables.length > 0) {
+      setContextVariables(localVariables);
+    }
+  }, [localVariables, setContextVariables]);
+
+  useEffect(() => {
+    const hasData = localDataRows.some(row =>
+      Object.values(row).some(v => v !== '' && v !== null && v !== undefined)
+    );
+    if (hasData) {
+      setContextDataRows(localDataRows);
+    }
+  }, [localDataRows, setContextDataRows]);
   const [seedInput, setSeedInput] = useState('');
   const [sendStatus, setSendStatus] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
@@ -56,7 +70,7 @@ const DataView: React.FC<SPSSDataViewProps> = ({ isDarkMode, selectedVariables }
 
   const getCellDisplay = (row: RawDataRow, varName: string): string => {
     const val = row[varName];
-    if (val === null || val === undefined || val === '') return '-';
+    if (val === null || val === undefined || val === '') return '';
     return String(val);
   };
 
@@ -149,6 +163,7 @@ const DataView: React.FC<SPSSDataViewProps> = ({ isDarkMode, selectedVariables }
       }
     } else {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
         setEditingCell({ row, col });
         setCellEditValue(e.key);
       } else if (e.key === 'Enter' || e.key === 'F2') {

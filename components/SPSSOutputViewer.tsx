@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import type { OutputItem } from './StatsContext';
+import { useStats } from './StatsContext';
 
 export interface SPSSOutputViewerProps {
   isDarkMode: boolean;
 }
 
-type GroupKey = 'descriptives' | 'anova' | 'ttest' | 'correlation' | 'plot' | 'regression' | 'freq';
+type GroupKey = 'descriptives' | 'anova' | 'ttest' | 'correlation' | 'plot' | 'regression' | 'freq' | 'text' | 'chisquare';
 
 const GROUP_LABELS: Record<GroupKey, string> = {
   descriptives: 'Descriptive Statistics',
@@ -15,19 +16,21 @@ const GROUP_LABELS: Record<GroupKey, string> = {
   plot: 'Plots',
   regression: 'Regression',
   freq: 'Frequencies',
+  text: 'Messages',
+  chisquare: 'Chi-Square Tests',
 };
 
-const GROUP_ORDER: GroupKey[] = ['descriptives', 'freq', 'anova', 'ttest', 'correlation', 'regression', 'plot'];
+const GROUP_ORDER: GroupKey[] = ['descriptives', 'freq', 'anova', 'ttest', 'correlation', 'regression', 'chisquare', 'plot', 'text'];
 
 function groupItems(items: OutputItem[]): Record<GroupKey, OutputItem[]> {
   const groups: Record<GroupKey, OutputItem[]> = {
-    descriptives: [], freq: [], anova: [], ttest: [], correlation: [], regression: [], plot: [],
+    descriptives: [], freq: [], anova: [], ttest: [], correlation: [], regression: [], plot: [], text: [], chisquare: [],
   };
   for (const item of items) {
-    if (groups[item.type]) {
-      groups[item.type].push(item);
+    if (item.type in groups) {
+      groups[item.type as GroupKey].push(item);
     } else {
-      groups.plot.push(item);
+      groups.text.push(item);
     }
   }
   return groups;
@@ -35,6 +38,16 @@ function groupItems(items: OutputItem[]): Record<GroupKey, OutputItem[]> {
 
 function renderTable(data: unknown): React.ReactNode {
   if (!data) return null;
+
+  // Handle text/message type
+  if (typeof data === 'object' && data !== null && 'content' in data) {
+    const obj = data as Record<string, unknown>;
+    return (
+      <div className="p-2 text-xs font-mono whitespace-pre-wrap text-slate-600 dark:text-slate-300">
+        {String(obj.content)}
+      </div>
+    );
+  }
 
   if (Array.isArray(data)) {
     if (data.length === 0) return null;
@@ -144,26 +157,8 @@ function renderTable(data: unknown): React.ReactNode {
 
 const OutputViewer: React.FC<SPSSOutputViewerProps> = ({ isDarkMode }) => {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<GroupKey>>(new Set());
-  const [items, setItems] = useState<OutputItem[]>([]);
-
-  React.useEffect(() => {
-    const handleStorage = () => {
-      try {
-        const stored = localStorage.getItem('stats_output_items');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) setItems(parsed);
-        }
-      } catch { /* ignore */ }
-    };
-    handleStorage();
-    window.addEventListener('storage', handleStorage);
-    const interval = setInterval(handleStorage, 500);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
-    };
-  }, []);
+  // BUG-002 FIX: Use context directly instead of localStorage polling
+  const { outputItems: items, removeOutput, clearOutput } = useStats();
 
   const toggleGroup = (group: GroupKey) => {
     setCollapsedGroups(prev => {
@@ -175,16 +170,11 @@ const OutputViewer: React.FC<SPSSOutputViewerProps> = ({ isDarkMode }) => {
   };
 
   const removeItem = (id: string) => {
-    setItems(prev => {
-      const next = prev.filter(i => i.id !== id);
-      localStorage.setItem('stats_output_items', JSON.stringify(next));
-      return next;
-    });
+    removeOutput(id);
   };
 
   const clearAll = () => {
-    setItems([]);
-    localStorage.removeItem('stats_output_items');
+    clearOutput();
   };
 
   const groups = groupItems(items);
@@ -241,7 +231,7 @@ const OutputViewer: React.FC<SPSSOutputViewerProps> = ({ isDarkMode }) => {
                     onClick={() => toggleGroup(groupKey)}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${textColor} ${headerBg} hover:${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'} transition-colors`}
                   >
-                    <span className={`w-4 h-4 flex items-center justify-center text-xs ${isCollapsed ? 'rotate-90' : ''} transition-transform`}>
+                    <span className={`w-4 h-4 flex items-center justify-center text-xs ${!isCollapsed ? 'rotate-90' : ''} transition-transform`}>
                       ▶
                     </span>
                     {GROUP_LABELS[groupKey]}

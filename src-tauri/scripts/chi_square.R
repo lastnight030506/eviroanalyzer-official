@@ -29,9 +29,20 @@ tryCatch({
   } else if (file.exists(session_file)) {
     # Load from saved session file
     session_data <- fromJSON(session_file)
-    data <- do.call(rbind, lapply(session_data$data, function(row) {
-      as.data.frame(row, stringsAsFactors = FALSE)
-    }))
+    # session_data$data is a data.frame where rows = data observations, columns = variables
+    if (is.data.frame(session_data$data)) {
+      # Rows are data observations - iterate over rows
+      n_rows <- nrow(session_data$data)
+      data <- do.call(rbind, lapply(seq_len(n_rows), function(i) {
+        as.data.frame(as.list(session_data$data[i, ]), stringsAsFactors = FALSE)
+      }))
+      colnames(data) <- session_data$columns
+    } else {
+      # It's a list of row objects
+      data <- do.call(rbind, lapply(session_data$data, function(row) {
+        as.data.frame(as.list(row), stringsAsFactors = FALSE)
+      }))
+    }
     rownames(data) <- NULL
   } else {
     stop("Data not found in R session. Please load data first.")

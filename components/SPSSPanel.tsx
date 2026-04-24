@@ -18,6 +18,8 @@ import type { ContinuousResult, FrequencyResult, TTestResult, ANOVAResult, Corre
 
 export interface SPSSPanelProps {
   isDarkMode: boolean;
+  rStatus?: 'checking' | 'available' | 'unavailable';
+  rVersion?: string | null;
 }
 
 // Custom resize handle component
@@ -48,7 +50,7 @@ const ResizeHandle: React.FC<ResizeHandleProps> = ({ direction, isDarkMode, onMo
   );
 };
 
-const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
+const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode, rStatus = 'checking', rVersion = null }) => {
   const [showVariableList, setShowVariableList] = useState(true);
   const [showOutput, setShowOutput] = useState(true);
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
@@ -200,7 +202,7 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
       'data.seedEncodeDecode': 'Seed Encode/Decode',
     };
     const label = actionLabels[action] || action;
-    alert(`${label}\n\nThis feature will be implemented.`);
+    addOutput({ type: 'text', title: label, tableData: { content: `${label} — This feature is coming soon.` } });
   };
 
   // Dialog result handlers that transform results and add to output
@@ -426,8 +428,8 @@ const SPSSPanel: React.FC<SPSSPanelProps> = ({ isDarkMode }) => {
             <span className="text-emerald-600 dark:text-emerald-400">Data Grid: {dataGridWidth}% | Output: {100 - dataGridWidth}%</span>
           )}
           <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${dataLoaded ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-            R {dataLoaded ? 'Connected' : 'Standby'}
+            <span className={`w-2 h-2 rounded-full ${rStatus === 'available' ? 'bg-emerald-500' : rStatus === 'unavailable' ? 'bg-rose-500' : 'bg-slate-400 animate-pulse'}`} />
+            R {rStatus === 'available' ? (rVersion || 'Connected') : rStatus === 'unavailable' ? 'Unavailable' : 'Checking...'}
           </span>
         </div>
       </div>

@@ -1,0 +1,11 @@
+Group,Treatment,Outcome
+A,Treatment,Recovered
+A,Treatment,Recovered
+A,Treatment,Not Recovered
+A,Control,Recovered
+A,Control,Not Recovered
+B,Treatment,Recovered
+B,Treatment,Recovered
+B,Treatment,Recovered
+B,Control,Recovered
+B,Control,Not Recovered

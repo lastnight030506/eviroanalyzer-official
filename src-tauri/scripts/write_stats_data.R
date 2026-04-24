@@ -12,12 +12,25 @@ data_rows <- input$data       # array of RawDataRow objects
 
 # Build R data frame from data_rows
 if (length(data_rows) > 0) {
-  # All rows have same columns
-  col_names <- names(data_rows[[1]])
-  data <- do.call(rbind, lapply(data_rows, function(row) {
-    as.data.frame(row, stringsAsFactors = FALSE)
-  }))
-  rownames(data) <- NULL
+  # jsonlite::fromJSON returns data.frame where:
+  # - rows = original data rows
+  # - columns = variable names (Group, Treatment, Outcome)
+  if (is.data.frame(data_rows)) {
+    n_rows <- nrow(data_rows)
+    input_col_names <- names(data_rows)
+    # Iterate over rows to get each observation
+    data <- do.call(rbind, lapply(seq_len(n_rows), function(i) {
+      as.data.frame(as.list(data_rows[i, ]), stringsAsFactors = FALSE)
+    }))
+    colnames(data) <- input_col_names
+  } else {
+    # Not a data.frame - treat as list of lists
+    col_names <- names(data_rows[[1]])
+    data <- do.call(rbind, lapply(data_rows, function(row) {
+      as.data.frame(row, stringsAsFactors = FALSE)
+    }))
+    rownames(data) <- NULL
+  }
 
   # Create lookup by variable name - handle JSON parsing which may return data.frame
   var_list <- if (is.list(variables) && !is.data.frame(variables)) {
@@ -31,7 +44,7 @@ if (length(data_rows) > 0) {
   var_lookup <- setNames(var_list, sapply(var_list, function(v) if (is.list(v)) v$name else v[["name"]]))
 
   # Convert numeric columns
-  for (col in col_names) {
+  for (col in colnames(data)) {
     var_info <- var_lookup[[col]]
     if (is.list(var_info)) {
       var_type <- var_info$type
@@ -95,7 +108,7 @@ var_info <- lapply(var_list, function(var) {
 # Save session data to temp JSON file (same format as read_data.R)
 session_file <- paste0("C:/Users/OS/AppData/Local/Temp/enviroanalyzer_session_", gsub("[^a-zA-Z0-9]", "_", session_id), ".json")
 save_data <- lapply(seq_len(nrow(data)), function(i) {
-  row <- as.list(data[i, ])
+  row <- lapply(names(data), function(col) data[[col]][i])
   names(row) <- names(data)
   row
 })
