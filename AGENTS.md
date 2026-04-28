@@ -2,124 +2,120 @@
 
 ## Project Overview
 
-**EnviroAnalyzer Pro** - A Tauri + React + TypeScript desktop application for environmental compliance assessment (QCVN standards). Analyzes water quality parameters against Vietnamese regulatory standards.
+**EnviroAnalyzer Pro** - An R Shiny desktop-grade web application for environmental data filtering and statistical analysis. Provides interactive data import, outlier detection, ANOVA, hypothesis testing, and data export.
 
-**Stack**: React 18, TypeScript, Tailwind CSS, Recharts, Tauri (Rust), Vite
+**Stack**: R, Shiny, bslib, ggplot2, plotly, DT, dplyr, tidyr, readxl, writexl, broom
 
 ## Build Commands
 
 ```bash
-# Development
-npm run dev              # Start Vite dev server
-npm run tauri dev        # Start Tauri dev (desktop app)
+# Install dependencies (local .r-lib)
+Rscript install_packages.R
 
-# Production Build
-npm run build            # Build for production
-npm run tauri build      # Build Tauri desktop app
+# Run the Shiny app
+Rscript run_app.R
 
-# Type Checking
-npm run tauri build -- --debug  # Debug build with symbols
+# Or from R console
+shiny::runApp('.')
 ```
 
-**No test suite configured** - Add tests with `vitest` if needed.
+**No test suite configured** — Add tests with `testthat` if needed.
 
 ## Code Style Guidelines
 
-### TypeScript
+### R Code
 
-- **Strict mode enabled** - No `any` types, no `@ts-ignore`
-- Use explicit return types on exported functions
-- Prefer `interface` over `type` for object shapes
-- Use union types for finite states: `type Status = 'Pass' | 'Warning' | 'Fail'`
+- Use `<-` for assignment, `=` only in function arguments
+- Prefer `snake_case` for function and variable names
+- Prefix internal helpers with module name or keep them descriptive
+- Avoid `suppressMessages` / `suppressWarnings` unless necessary; use `suppressPackageStartupMessages` for library loads
 
 ### Naming Conventions
 
-- Components: PascalCase (`Dashboard.tsx`, `DataEditor.tsx`)
-- Utils/Hooks: camelCase (`logic.ts`, `useTheme.ts`)
-- Types/Interfaces: PascalCase (`AssessmentResult`, `SampleRow`)
-- Constants: UPPER_SNAKE_CASE (`COLORS`, `QCVN_STANDARDS`)
-- CSS classes: Tailwind utility classes (no custom CSS files)
+- UI output IDs: `snake_case` (e.g., `outlier_table`, `anova_plot`)
+- Reactive values: `camelCase` ending in descriptive noun (e.g., `raw_data`, `cleaned_data`)
+- Functions: `snake_case`, descriptive verbs (e.g., `detect_outliers_iqr`, `run_anova_analysis`)
+- Constants: UPPER_SNAKE_CASE (if any)
 
 ### Imports
 
-```typescript
-// Order: React → External libs → Internal (types → utils → components)
-import React from 'react';
-import { BarChart } from 'recharts';
-import { AssessmentResult } from '../types';
-import { getComplianceStats } from '../utils/logic';
-import Dashboard from '../components/Dashboard';
+```r
+# Order: Base R → Tidyverse / Shiny ecosystem → Others
+library(shiny)
+library(bslib)
+library(dplyr)
+library(ggplot2)
 ```
 
-### Component Structure
+### Module / Component Structure
 
-```typescript
-interface Props {
-  results: AssessmentResult[];
-  isDarkMode: boolean;
+```r
+# UI panel for a tab
+my_tab_ui <- function(id) {
+  ns <- NS(id)
+  tagList(
+    # inputs
+    # outputs
+  )
 }
 
-const Component: React.FC<Props> = ({ results, isDarkMode }) => {
-  // Hooks first
-  const stats = getComplianceStats(results);
-  
-  // Handlers
-  const handleClick = () => { ... };
-  
-  // Render
-  return (<div>...</div>);
-};
-
-export default Component;
+# Server logic for a tab
+my_tab_server <- function(id, data) {
+  moduleServer(id, function(input, output, session) {
+    # Reactives
+    # Observers
+    # Outputs
+  })
+}
 ```
 
-### Styling (Tailwind CSS)
+> Current implementation is a monolithic `app.R` (UI + server + helpers). Future modularization can use Shiny modules.
 
-- Use Tailwind utility classes exclusively
-- Dark mode: `dark:` prefix classes (e.g., `dark:bg-slate-800`)
-- Color palette: Slate (grays), Emerald (success), Amber (warning), Rose (danger), Sky (primary)
-- Transitions: Always include `transition-colors` for theme changes
-- Spacing: Use standard scale (4, 6, 8, etc.)
+### Styling (bslib + Custom CSS)
+
+- Use `bs_theme()` for the base dark theme; override with custom CSS inside `tags$head(tags$style(HTML("...")))`
+- Color palette: `#0ea5e9` (Sky/primary), `#10b981` (Emerald/success), `#f59e0b` (Amber/warning), `#ef4444` (Rose/danger), `#64748b` (Slate/muted)
+- Dark backgrounds: `#0b1120` (body), `#0f172a` (sidebar/input), `#1e293b` (card)
+- Text: `#e2e8f0` (primary), `#94a3b8` (secondary), `#64748b` (muted)
+- Always test hover/focus states for accessibility
 
 ### Error Handling
 
-- Validate inputs at component boundaries
-- Use TypeScript strict null checks
-- Return sensible defaults for empty states (see `assessCompliance` for pattern)
-- No empty catch blocks - always handle or propagate
+- Wrap file I/O and stats computations in `tryCatch(..., error = function(e) { showNotification(...) })`
+- Use `req()` to guard reactive outputs against `NULL` data
+- Return sensible defaults for empty states (e.g., empty data frames with message columns)
+- No silent failures — notify the user via `showNotification()`
 
 ### State Management
 
-- Use React hooks (`useState`, `useEffect`, `useMemo`)
-- Lift state to common ancestor when needed
-- Props drilling acceptable for this app size (no context needed yet)
+- Use `reactiveVal()` and `reactive()` for state
+- Keep `raw_data()` immutable; mutate via `cleaned_data()` or separate reactive vals
+- Reset downstream results when upstream data changes (e.g., `reset_analysis_results()`)
+- Sheet-based Excel data stored in `reactiveVal(list())` with `active_sheet()` tracking
 
 ### File Organization
 
 ```
-/src
-  /components     # React components
-  /utils          # Pure logic functions
-  types.ts        # Shared TypeScript interfaces
-  constants.ts    # App constants (colors, standards)
-  App.tsx         # Root component
-  index.tsx       # Entry point
-/src-tauri        # Rust backend (Tauri)
-  /src
-    lib.rs        # Tauri commands
-    main.rs       # Entry point
+├── app.R                   # Main Shiny app (UI, server, helpers)
+├── run_app.R               # Launcher script
+├── install_packages.R      # Dependency installer
+├── sample_data.csv         # Demo data
+├── test_data.csv           # Additional test data
+├── modules/                # Design docs & re-export stubs for planned features
+├── .r-lib/                 # Local R package library (auto-created, gitignored)
+└── uploads/                # Uploaded file storage (gitignored)
 ```
 
 ### Git
 
-- Do not commit without explicit user request
-- Do not commit `.env` or credential files
-- Standard `.gitignore` excludes: `node_modules`, `dist`, `*.log`
+- **Always commit** when explicitly requested or after completing requested file changes
+- Do not commit `.env`, credential files, or `uploads/`
+- Standard `.gitignore` excludes: `.r-lib/`, `.Rhistory`, `*.log`, `shiny.log`, `shiny.err`, `uploads/`
 
 ### Key Patterns
 
-1. **Type guards**: Use `filter((v): v is number => v !== null)` for type narrowing
-2. **Dynamic theming**: Pass `isDarkMode` prop, compute styles object
-3. **Data flow**: Parent manages state → passes to children via props
-4. **Chart config**: Use `isAnimationActive={false}` for performance
-5. **Recharts**: Always wrap in `ResponsiveContainer` with `debounce={300}`
+1. **Freeze inputs before updating**: `freezeReactiveValue(input, "id")` before `updateSelectInput()` to avoid reactive loops
+2. **Data caching**: Use `bindCache()` on expensive reactives where appropriate
+3. **Plot theming**: Wrap ggplot in `plotly::ggplotly()` with dark hover labels; disable mode bar via `config(displayModeBar = FALSE)`
+4. **DT tables**: Use `server = TRUE`, `deferRender = TRUE`, and explicit scroll dimensions for large data
+5. **Sheet tabs**: Render custom buttons that call `Shiny.setInputValue()` for multi-sheet Excel navigation

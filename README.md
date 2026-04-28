@@ -1,125 +1,107 @@
 # EnviroAnalyzer Pro
 
-> 🌿 Professional Environmental Compliance Assessment Tool for Vietnamese QCVN Standards
+> 🌿 Professional Environmental Data Filtering & Statistical Analysis Module
 
-A Tauri + React + TypeScript desktop application that analyzes water/air/soil quality parameters against regulatory limits, performs time series forecasting, geospatial analysis, and generates compliance reports.
-
----
-
-## 📂 Module Directory
-
-Each module is self-contained with its own documentation, agent definition, and source references.
-
-### Feature Modules
-
-| Module | Description | Docs |
-|--------|-------------|------|
-| 🧪 [**compliance-engine**](modules/compliance-engine/) | Core QCVN assessment logic (Pass/Warning/Fail) | [README](modules/compliance-engine/docs/README.md) |
-| ✏️ [**data-editor**](modules/data-editor/) | Interactive spreadsheet for sample data entry | [README](modules/data-editor/docs/README.md) |
-| 📊 [**dashboard**](modules/dashboard/) | Charts & summary cards (Recharts) | [README](modules/dashboard/docs/README.md) |
-| ⚙️ [**regulation-manager**](modules/regulation-manager/) | CRUD for custom QCVN regulations + persistence | [README](modules/regulation-manager/docs/README.md) |
-| 📈 [**forecasting**](modules/forecasting/) | ARIMA/Prophet time series via R sidecar | [README](modules/forecasting/docs/README.md) |
-| 🗺️ [**gis-spatial**](modules/gis-spatial/) | Leaflet maps + Kriging interpolation | [README](modules/gis-spatial/docs/README.md) |
-| 📄 [**report-export**](modules/report-export/) | PDF/DOCX/HTML/CSV report generation | [README](modules/report-export/docs/README.md) |
-| 🔬 [**r-shiny-filter**](modules/r-shiny-filter/) | Standalone R Shiny data filtering app | [README](modules/r-shiny-filter/docs/README.md) |
-
-### Infrastructure Modules
-
-| Module | Description | Docs |
-|--------|-------------|------|
-| 🔌 [**r-sidecar**](modules/r-sidecar/) | R process execution bridge (Tauri ↔ R) | [README](modules/r-sidecar/docs/README.md) |
-| 🔄 [**auto-updater**](modules/auto-updater/) | Tauri auto-update mechanism | [README](modules/auto-updater/docs/README.md) |
+An **R Shiny** application for importing, exploring, cleaning, and statistically analyzing environmental sample data. It provides interactive outlier detection, ANOVA, hypothesis testing, and data-export capabilities through a dark-themed, responsive UI.
 
 ---
 
-## 🏗️ Architecture
+## ✨ Features
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    App.tsx (Root)                    │
-├──────────┬──────────┬──────────┬──────────┬─────────┤
-│   Data   │ Analysis │ Forecast │   GIS    │Settings │
-│  Editor  │Dashboard │          │          │ RegMgr  │
-├──────────┴──────────┴──────┬───┴──────────┴─────────┤
-│         Compliance Engine  │   Report Export         │
-│    (types, logic, const)   │   (HTML/CSV/PDF/DOCX)   │
-├────────────────────────────┼─────────────────────────┤
-│              R Sidecar (Tauri ↔ R Bridge)            │
-│    ┌──────────┬──────────┬──────────┬───────────┐    │
-│    │ ARIMA.R  │Prophet.R │kriging.R │report.R   │    │
-│    └──────────┴──────────┴──────────┴───────────┘    │
-└──────────────────────────────────────────────────────┘
-```
+| Tab | What it does |
+|-----|--------------|
+| **Data Import** | Upload CSV / Excel, paste tab-separated data, or load built-in sample data. Multi-sheet Excel support with sheet tabs. |
+| **Outlier Detection** | Detect outliers per numeric column using the IQR method (configurable *k*). Interactive boxplots and detail tables. |
+| **ANOVA Analysis** | One-way ANOVA with Tukey HSD post-hoc tests and group-comparison plots. |
+| **Data Cleaning** | Remove, Winsorize (cap), or replace outliers with `NA`. Export cleaned data as CSV or Excel. |
+| **Statistical Inference** | Normality check (Shapiro-Wilk), independent / paired t-tests, chi-square test of independence, and correlation heatmap. |
 
 ---
 
 ## 🚀 Quick Start
 
-```bash
-# Install dependencies
-npm install
-
-# Start dev server (browser)
-npm run dev
-
-# Start Tauri desktop app
-npm run tauri dev
-
-# Run tests
-npm test
-
-# Build production
-npm run build
-```
-
-### R Shiny Module (standalone)
+### 1. Install dependencies
 
 ```bash
-Rscript r-shiny-filter/install_packages.R
-Rscript -e "shiny::runApp('r-shiny-filter', launch.browser = TRUE)"
+Rscript install_packages.R
 ```
+
+This installs required packages into a local `.r-lib` folder.
+
+### 2. Run the app
+
+```bash
+# Option A — launcher script
+Rscript run_app.R
+
+# Option B — from an R console
+shiny::runApp('.')
+```
+
+The app will be available at `http://127.0.0.1:3819` (or an auto-assigned port).
 
 ---
 
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, TypeScript, Tailwind CSS |
-| Charts | Recharts |
-| Maps | Leaflet.js, react-leaflet |
-| Desktop | Tauri 2 (Rust) |
-| Statistics | R (ARIMA, Kriging, Prophet) |
-| Reports | jsPDF, R Markdown |
-| Build | Vite |
-| Testing | Vitest |
+|-------|------------|
+| UI Framework | R Shiny + bslib (Bootstrap 5) |
+| Tables | DT (DataTables) |
+| Visualization | ggplot2 + plotly |
+| Data Wrangling | dplyr, tidyr |
+| I/O | readxl, writexl |
+| Statistics | R base stats, broom |
 
 ---
 
 ## 📁 Source Layout
 
 ```
-├── App.tsx              # Root component (orchestrator)
-├── index.tsx            # Entry point
-├── types.ts             # Shared TypeScript interfaces
-├── constants.ts         # QCVN standards & colors
-├── components/          # React UI components
-├── services/            # Business logic & API services
-├── utils/               # Pure logic functions
-├── modules/             # 📦 Feature-based module docs & re-exports
-├── tests/               # Vitest test files
-├── r-shiny-filter/      # Standalone R Shiny app
-├── src-tauri/           # Tauri Rust backend
-│   ├── src/lib.rs       # Tauri commands
-│   └── scripts/         # R scripts (ARIMA, Kriging, etc.)
-└── .agent/              # Agent skills & workflows
+├── app.R                   # Main Shiny application (UI + server + logic)
+├── run_app.R               # Convenience launcher (port 3819)
+├── install_packages.R      # Installs required R packages locally
+├── sample_data.csv         # Built-in demo data (water quality stations)
+├── test_data.csv           # Additional test data
+├── modules/                # 📦 Feature-based design docs & barrel re-exports
+│   ├── compliance-engine/
+│   ├── data-editor/
+│   ├── dashboard/
+│   ├── forecasting/
+│   ├── gis-spatial/
+│   ├── report-export/
+│   ├── r-shiny-filter/
+│   └── ...
+├── .r-lib/                 # Local R package library (auto-created)
+└── uploads/                # Uploaded file storage
 ```
+
+> **Note:** The `modules/` directory contains design documentation and re-export stubs for planned expansion (e.g., compliance engine, dashboard, GIS). The current, fully functional implementation lives in **`app.R`**.
 
 ---
 
-## 📋 Standards Supported
+## 📋 Supported Data Formats
 
-- **QCVN 08-MT:2015** — Surface Water Quality (Irrigation)
-- **QCVN 14:2008/BTNMT** — Domestic Wastewater
-- **QCVN 05:2013/BTNMT** — Ambient Air Quality
-- **Custom** — User-defined regulations via Regulation Manager
+- **CSV** (`.csv`)
+- **Excel** (`.xlsx`, `.xls`) — multiple sheets supported
+- **Paste / tab-separated** text
+
+---
+
+## 🧪 Sample Data
+
+The included `sample_data.csv` contains water-quality measurements for Vietnamese monitoring stations:
+
+```csv
+Station_ID,Station_Name,Date,pH,DO,BOD5,COD,TSS,NH4,NO3,PO4,Turbidity,Temperature,Group
+ST001,Song Sai Gon - Binh Phuoc,2024-01-15,7.2,5.8,12.5,28.3,45.2,1.2,4.5,0.35,18.5,28.2,A
+ST002,Kenh Nhieu Loc,2024-01-15,6.5,3.2,35.2,68.5,95.3,4.5,8.2,1.25,45.8,28.5,B
+```
+
+Load it instantly via **Data Import → Load Sample**.
+
+---
+
+## 📄 License
+
+MIT License — Copyright (c) 2024 EnviroAnalyzer Pro

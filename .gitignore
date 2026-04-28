@@ -1,23 +1,23 @@
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+shiny.log
+shiny.err
 
-# Dependencies
-node_modules
+# R local library & session files
+.r-lib/
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
 
-# Build outputs
-dist
-dist-ssr
-*.local
+# Uploaded user data
+uploads/
 
-# Tauri build
-src-tauri/target/
-src-tauri/gen/
+# Build / temp outputs
+temp_bin/
+*.tmp
+*.temp
 
 # Editor directories and files
 .vscode/*
@@ -29,12 +29,3 @@ src-tauri/gen/
 *.njsproj
 *.sln
 *.sw?
-
-# Temp files
-temp_bin/
-*.tmp
-*.temp
-
-# Lock files (keep npm lockfile, ignore others)
-pnpm-lock.yaml
-yarn.lock
