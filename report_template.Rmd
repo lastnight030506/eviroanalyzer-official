@@ -1,0 +1,325 @@
+---
+output:
+  pdf_document:
+    fig_caption: yes
+    number_sections: no
+    latex_engine: xelatex
+    extra_dependencies:
+      booktabs: null
+      longtable: null
+      xcolor: null
+      graphicx: null
+      float: null
+geometry: margin=1in
+params:
+  data_file: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = 'center',
+  fig.pos = 'H',
+  out.width = '100%'
+)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(broom)
+
+brand_blue <- "#0EA5E9"
+brand_success <- "#10B981"
+brand_warning <- "#F59E0B"
+brand_danger <- "#EF4444"
+```
+
+\definecolor{brandblue}{HTML}{0EA5E9}
+\pagecolor{white}
+\color{black}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\Huge\bfseries\color{brandblue} EnviroAnalyzer Pro\par}
+  \vspace{1cm}
+  {\LARGE Analysis Report\par}
+  \vspace{2cm}
+
+```{r title_meta, results='asis'}
+results <- readRDS(params$data_file)
+
+cat("\\large\\textbf{Generated:} ", format(results$timestamp, "%Y-%m-%d %H:%M:%S"), "\\par\n", sep = "")
+cat("\\large\\textbf{File:} ", ifelse(is.null(results$filename), "N/A", results$filename), "\\par\n", sep = "")
+cat("\\large\\textbf{Sheet:} ", ifelse(is.null(results$active_sheet), "N/A", results$active_sheet), "\\par\n", sep = "")
+```
+
+\end{titlepage}
+
+```{r body, results='asis'}
+tryCatch({
+  has_any_analysis <- !is.null(results$outlier_results) ||
+    !is.null(results$anova_results) ||
+    !is.null(results$hypothesis_results) ||
+    !is.null(results$regression_results)
+
+  if (!has_any_analysis) {
+    cat("\\begin{center}\\large No analyses have been run yet. Go to each analysis tab and run the tests to populate this report.\\end{center}\n")
+  }
+
+  if (!is.null(results$outlier_results)) {
+    cat("\\section*{\\textcolor{brandblue}{Outlier Detection}}\n")
+
+    outlier_summary <- lapply(results$outlier_results, function(x) {
+      data.frame(
+        Column = x$column,
+        Method = "IQR",
+        n_total = x$n_total,
+        n_outliers = x$n_outliers,
+        pct_outliers = round(x$pct_outliers, 2),
+        Lower_Bound = round(x$lower, 4),
+        Upper_Bound = round(x$upper, 4),
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      bind_rows()
+
+    cat("\\textbf{Outlier Summary by Column}\n\n")
+    print(kable(outlier_summary, booktabs = TRUE, longtable = TRUE))
+
+    outlier_cols <- sapply(results$outlier_results, function(x) x$column)
+    plot_df <- results$raw_data |>
+      select(all_of(outlier_cols)) |>
+      pivot_longer(everything(), names_to = "column", values_to = "value")
+
+    outlier_bounds <- lapply(results$outlier_results, function(x) {
+      data.frame(column = x$column, lower = x$lower, upper = x$upper)
+    }) |>
+      bind_rows()
+
+    p <- ggplot(plot_df, aes(x = column, y = value)) +
+      geom_boxplot(fill = brand_blue, color = "black", outlier.colour = brand_danger) +
+      geom_hline(data = outlier_bounds, aes(yintercept = lower), color = brand_warning, linetype = "dashed") +
+      geom_hline(data = outlier_bounds, aes(yintercept = upper), color = brand_warning, linetype = "dashed") +
+      labs(title = "Outlier Detection Boxplots", x = "Column", y = "Value") +
+      theme_bw() +
+      theme(text = element_text(color = "black"))
+
+    print(p)
+  }
+
+  if (!is.null(results$anova_results)) {
+    cat("\\section*{\\textcolor{brandblue}{ANOVA Analysis}}\n")
+
+    cat("\\textbf{ANOVA Table}\n\n")
+    print(kable(results$anova_results$anova_table, booktabs = TRUE, longtable = TRUE))
+
+    if (!is.null(results$anova_results$tukey_table)) {
+      cat("\\textbf{Tukey HSD Post-Hoc Comparisons}\n\n")
+      print(kable(results$anova_results$tukey_table, booktabs = TRUE, longtable = TRUE))
+    }
+
+    if (!is.null(results$anova_results$model)) {
+      aug <- broom::augment(results$anova_results$model)
+      model_terms <- attr(terms(results$anova_results$model), "term.labels")
+      response_name <- as.character(attr(terms(results$anova_results$model), "variables")[[2]])
+
+      if (length(model_terms) >= 1 && all(c(model_terms[1], response_name) %in% names(aug))) {
+        p <- ggplot(aug, aes_string(x = model_terms[1], y = response_name)) +
+          geom_boxplot(fill = brand_blue, color = "black", outlier.colour = brand_danger) +
+          labs(title = "ANOVA Group Comparison", x = model_terms[1], y = response_name) +
+          theme_bw() +
+          theme(text = element_text(color = "black"))
+        print(p)
+      }
+    }
+  }
+
+  if (!is.null(results$hypothesis_results)) {
+    cat("\\section*{\\textcolor{brandblue}{Statistical Inference}}\n")
+
+    h <- results$hypothesis_results
+
+    # Build unified summary table matching the app's hypothesis_table format
+    variable_label <- if (!is.null(h$variable) && length(h$variable) > 0) {
+      as.character(h$variable[[1]])
+    } else if (!is.null(h$variables) && length(h$variables) > 0) {
+      paste(h$variables, collapse = ", ")
+    } else if (!is.null(h$before) && !is.null(h$after)) {
+      paste(h$before[[1]], "vs", h$after[[1]])
+    } else if (!is.null(h$var1) && !is.null(h$var2)) {
+      paste(h$var1[[1]], "vs", h$var2[[1]])
+    } else {
+      "N/A"
+    }
+
+    p_val_text <- if (!is.null(h$p_value) && !is.na(h$p_value)) {
+      formatC(h$p_value, format = "e", digits = 3)
+    } else {
+      "N/A"
+    }
+    stat_text <- if (!is.null(h$statistic) && !is.na(h$statistic)) {
+      as.character(round(h$statistic, 4))
+    } else {
+      "N/A"
+    }
+    df_text <- if (!is.null(h$df) && !is.na(h$df)) {
+      as.character(h$df)
+    } else {
+      "N/A"
+    }
+
+    summary_df <- data.frame(
+      Metric = c("Test", "Variable(s)", "Statistic", "df", "P-value", "Interpretation"),
+      Value = c(
+        ifelse(is.null(h$test_name), "N/A", h$test_name),
+        variable_label,
+        stat_text,
+        df_text,
+        p_val_text,
+        ifelse(is.null(h$interpretation), "N/A", h$interpretation)
+      ),
+      stringsAsFactors = FALSE
+    )
+
+    cat("\\textbf{Summary}\n\n")
+    print(kable(summary_df, booktabs = TRUE))
+
+    if (h$type == "ttest_ind") {
+      desc_table <- data.frame(
+        Group = c(h$g1_name, h$g2_name),
+        n = c(h$n_g1, h$n_g2),
+        Mean = c(round(h$mean_g1, 4), round(h$mean_g2, 4)),
+        SD = c(round(h$sd_g1, 4), round(h$sd_g2, 4))
+      )
+      cat("\\textbf{Group Descriptives}\n\n")
+      print(kable(desc_table, booktabs = TRUE))
+
+      if (h$variable %in% names(results$raw_data) && h$group %in% names(results$raw_data)) {
+        plot_df <- results$raw_data |>
+          select(value = all_of(h$variable), group = all_of(h$group)) |>
+          filter(!is.na(value), !is.na(group))
+        p <- ggplot(plot_df, aes(x = group, y = value, fill = group)) +
+          geom_boxplot(color = "black", outlier.colour = brand_danger) +
+          scale_fill_manual(values = c(brand_blue, brand_success)) +
+          labs(title = paste("Independent t-test:", h$variable, "by", h$group), x = h$group, y = h$variable) +
+          theme_bw() +
+          theme(text = element_text(color = "black"), legend.position = "none")
+        print(p)
+      }
+    } else if (h$type == "ttest_paired") {
+      if (h$before %in% names(results$raw_data) && h$after %in% names(results$raw_data)) {
+        plot_df <- results$raw_data |>
+          select(before = all_of(h$before), after = all_of(h$after)) |>
+          pivot_longer(everything(), names_to = "Condition", values_to = "Value") |>
+          filter(!is.na(Value))
+        p <- ggplot(plot_df, aes(x = Condition, y = Value, fill = Condition)) +
+          geom_boxplot(color = "black", outlier.colour = brand_danger) +
+          scale_fill_manual(values = c(brand_blue, brand_success)) +
+          labs(title = paste("Paired t-test:", h$before, "vs", h$after), x = "Condition", y = "Value") +
+          theme_bw() +
+          theme(text = element_text(color = "black"), legend.position = "none")
+        print(p)
+      }
+    } else if (h$type == "normality") {
+      if (!is.null(h$plot)) {
+        print(h$plot + theme_bw() + theme(text = element_text(color = "black")))
+      }
+    } else if (h$type == "chisq") {
+      obs_long <- as.data.frame(h$observed) |>
+        rownames_to_column("Var1") |>
+        pivot_longer(-Var1, names_to = "Var2", values_to = "Count")
+
+      p <- ggplot(obs_long, aes(x = Var1, y = Count, fill = Var2)) +
+        geom_bar(stat = "identity", position = "dodge") +
+        scale_fill_manual(values = c(brand_blue, brand_success, brand_warning, brand_danger)) +
+        labs(title = paste("Chi-Square:", h$var1, "vs", h$var2), x = h$var1, y = "Count") +
+        theme_bw() +
+        theme(text = element_text(color = "black"))
+      print(p)
+    } else if (h$type == "correlation") {
+      cor_df <- as.data.frame(h$cor_matrix)
+      print(kable(cor_df, booktabs = TRUE, longtable = TRUE, digits = 3))
+
+      sig_pairs <- which(h$p_matrix < 0.05, arr.ind = TRUE)
+      if (nrow(sig_pairs) > 0) {
+        sig_df <- data.frame(
+          Var1 = rownames(h$p_matrix)[sig_pairs[, 1]],
+          Var2 = colnames(h$p_matrix)[sig_pairs[, 2]],
+          p_value = h$p_matrix[sig_pairs]
+        )
+        sig_df <- sig_df[sig_df$Var1 != sig_df$Var2, ]
+        if (nrow(sig_df) > 0) {
+          cat("\\textbf{Significant Correlation Pairs}\n\n")
+          print(kable(sig_df, booktabs = TRUE))
+        }
+      }
+    }
+  }
+
+  if (!is.null(results$alpha_result)) {
+    cat("\\section*{\\textcolor{brandblue}{Reliability Analysis}}\n")
+    alpha_table <- data.frame(
+      Metric = "Cronbach's Alpha",
+      Value = round(results$alpha_result$value, 3),
+      Items = results$alpha_result$n
+    )
+    cat("\\textbf{Cronbach's Alpha}\n\n")
+    print(kable(alpha_table, booktabs = TRUE))
+  }
+
+  if (!is.null(results$regression_results)) {
+    cat("\\section*{\\textcolor{brandblue}{Regression Analysis}}\n")
+
+    reg <- results$regression_results
+    metrics_table <- data.frame(
+      Metric = c("Intercept", "Slope", "R-squared", "Adj. R-squared", "p-value", "Pearson r", "n"),
+      Value = c(
+        round(reg$intercept, 4),
+        round(reg$slope, 4),
+        round(reg$r_squared, 4),
+        round(reg$adj_r_squared, 4),
+        formatC(reg$p_value, format = "e", digits = 2),
+        round(reg$correlation, 4),
+        reg$n
+      )
+    )
+    cat("\\textbf{Regression Metrics}\n\n")
+    print(kable(metrics_table, booktabs = TRUE))
+
+    if (!is.null(reg$model)) {
+      mf <- model.frame(reg$model)
+      response_name <- names(mf)[1]
+      predictor_name <- names(mf)[2]
+
+      p <- ggplot(mf, aes_string(x = predictor_name, y = response_name)) +
+        geom_point(color = brand_blue, size = 2) +
+        geom_smooth(method = "lm", color = brand_danger, fill = brand_warning, se = TRUE) +
+        labs(
+          title = "Linear Regression",
+          subtitle = paste0("r = ", round(reg$correlation, 3), ", R\u00B2 = ", round(reg$r_squared, 3)),
+          x = predictor_name,
+          y = response_name
+        ) +
+        theme_bw() +
+        theme(text = element_text(color = "black"))
+      print(p)
+    }
+  }
+
+  if (!is.null(results$cleaned_data)) {
+    cat("\\section*{\\textcolor{brandblue}{Data Cleaning}}\n")
+    before_rows <- ifelse(is.null(results$raw_data), "N/A", nrow(results$raw_data))
+    after_rows <- nrow(results$cleaned_data)
+    cat("Rows before cleaning: ", before_rows, "\n\n")
+    cat("Rows after cleaning: ", after_rows, "\n\n")
+    cat("Data cleaning was applied to the active dataset.\n")
+  }
+
+}, error = function(e) {
+  cat("\\textbf{Error generating report content:} ", conditionMessage(e), "\n")
+})
+```

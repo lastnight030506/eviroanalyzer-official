@@ -16,6 +16,8 @@ suppressPackageStartupMessages({
   library(writexl)
   library(broom)
   library(psych)
+  library(rmarkdown)
+  library(knitr)
 })
 
 # ============================================================
@@ -613,9 +615,10 @@ ui <- page_sidebar(
             DT::dataTableOutput("ttest_descriptive_table"),
             tags$hr()
           ),
-          navset_card_tab(
-            nav_panel("Summary Table", DT::dataTableOutput("hypothesis_table")),
-            nav_panel("Visualization", plotlyOutput("hypothesis_plot", height = "500px"))
+          downloadButton("download_report_inference", "Download Report (PDF)", icon = icon("file-pdf"), class = "btn-secondary w-100 mt-2"),
+           navset_card_tab(
+             nav_panel("Summary Table", DT::dataTableOutput("hypothesis_table")),
+             nav_panel("Visualization", plotlyOutput("hypothesis_plot", height = "500px"))
           )
         )
       )
@@ -650,9 +653,10 @@ ui <- page_sidebar(
           full_screen = TRUE,
           uiOutput("regression_summary"),
           tags$hr(),
-          navset_card_tab(
-            nav_panel("Summary Table", DT::dataTableOutput("regression_table")),
-            nav_panel("Visualization", plotlyOutput("regression_plot", height = "500px"))
+          downloadButton("download_report_regression", "Download Report (PDF)", icon = icon("file-pdf"), class = "btn-secondary w-100 mt-2"),
+           navset_card_tab(
+             nav_panel("Summary Table", DT::dataTableOutput("regression_table")),
+             nav_panel("Visualization", plotlyOutput("regression_plot", height = "500px"))
           ),
           tags$hr(),
           uiOutput("regression_interpretation")
@@ -720,7 +724,8 @@ ui <- page_sidebar(
           plotlyOutput("boxplot_chart", height = "400px"),
           tags$hr(),
           tags$h6("Outlier Details"),
-          DT::dataTableOutput("outlier_table")
+          downloadButton("download_report_outlier", "Download Report (PDF)", icon = icon("file-pdf"), class = "btn-secondary w-100 mt-2"),
+           DT::dataTableOutput("outlier_table")
         )
       )
     )
@@ -747,10 +752,11 @@ ui <- page_sidebar(
         card(
           card_header(tags$span(icon("chart-bar"), " ANOVA Results")),
           full_screen = TRUE,
-          navset_card_tab(
-            nav_panel("ANOVA Table", DT::dataTableOutput("anova_result_table")),
-            nav_panel("Tukey HSD", DT::dataTableOutput("tukey_table")),
-            nav_panel("Group Comparison Plot", plotlyOutput("anova_plot", height = "450px"))
+          downloadButton("download_report_anova", "Download Report (PDF)", icon = icon("file-pdf"), class = "btn-secondary w-100 mt-2"),
+           navset_card_tab(
+             nav_panel("ANOVA Table", DT::dataTableOutput("anova_result_table")),
+             nav_panel("Tukey HSD", DT::dataTableOutput("tukey_table")),
+             nav_panel("Group Comparison Plot", plotlyOutput("anova_plot", height = "450px"))
           )
         )
       )
@@ -783,7 +789,8 @@ ui <- page_sidebar(
           tags$h6("Export Cleaned Data"),
           tags$div(class = "cleaning-actions",
             downloadButton("download_csv", "Download CSV", class = "btn-success w-100 mb-2"),
-            downloadButton("download_xlsx", "Download Excel", class = "btn-primary w-100 mb-2")
+            downloadButton("download_xlsx", "Download Excel", class = "btn-primary w-100 mb-2"),
+            downloadButton("download_report_cleaning", "Download Report (PDF)", icon = icon("file-pdf"), class = "btn-secondary w-100 mt-2")
           ),
           tags$hr(),
           uiOutput("cleaning_summary")
@@ -896,6 +903,21 @@ server <- function(input, output, session) {
     anova_results(NULL)
     hypothesis_results(NULL)
     regression_results(NULL)
+  }
+  
+  build_report_data <- function() {
+    list(
+      timestamp = Sys.time(),
+      filename = isolate(uploaded_filename()),
+      active_sheet = isolate(active_sheet()),
+      raw_data = isolate(raw_data()),
+      cleaned_data = isolate(cleaned_data()),
+      outlier_results = isolate(outlier_results()),
+      anova_results = isolate(anova_results()),
+      hypothesis_results = isolate(hypothesis_results()),
+      alpha_result = isolate(alpha_result()),
+      regression_results = isolate(regression_results())
+    )
   }
   
   sync_loaded_data <- function(raw_sheets, file_label) {
@@ -1973,6 +1995,69 @@ server <- function(input, output, session) {
       writexl::write_xlsx(cleaned_data(), file)
     }
   )
+  
+  make_report_handler <- function() {
+    downloadHandler(
+      filename = function() {
+        paste0("EnviroAnalyzer_Report_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".pdf")
+      },
+      content = function(file) {
+        rds_path <- tempfile(fileext = ".rds")
+        report_data <- build_report_data()
+        saveRDS(report_data, rds_path)
+        
+        rmd_path <- file.path(getwd(), "report_template.Rmd")
+        
+        # Ensure pandoc is available (RStudio bundles it; standalone R may not see it)
+        if (!rmarkdown::pandoc_available()) {
+          rstudio_pandoc <- "C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools"
+          if (dir.exists(rstudio_pandoc)) {
+            Sys.setenv(RSTUDIO_PANDOC = rstudio_pandoc)
+          }
+        }
+        if (!rmarkdown::pandoc_available()) {
+          showNotification(
+            "Pandoc not found. Please install RStudio or add pandoc to your PATH.",
+            type = "error",
+            duration = 10
+          )
+          return(NULL)
+        }
+        
+        # Ensure tinytex is available for PDF generation
+        if (!requireNamespace("tinytex", quietly = TRUE) || !tinytex::is_tinytex()) {
+          showNotification(
+            "TinyTeX is not installed. Please run install_packages.R to set up LaTeX support.",
+            type = "error",
+            duration = 10
+          )
+          return(NULL)
+        }
+        
+        tryCatch({
+          rmarkdown::render(
+            input = rmd_path,
+            output_file = file,
+            params = list(data_file = rds_path),
+            envir = new.env(parent = globalenv())
+          )
+          showNotification("Report generated successfully!", type = "message", duration = 5)
+        }, error = function(e) {
+          showNotification(
+            paste("PDF generation failed:", conditionMessage(e)),
+            type = "error",
+            duration = 10
+          )
+        })
+      }
+    )
+  }
+  
+  output$download_report_outlier   <- make_report_handler()
+  output$download_report_anova     <- make_report_handler()
+  output$download_report_inference <- make_report_handler()
+  output$download_report_regression<- make_report_handler()
+  output$download_report_cleaning  <- make_report_handler()
 }
 
 # ============================================================

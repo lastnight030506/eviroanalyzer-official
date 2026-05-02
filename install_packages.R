@@ -2,7 +2,8 @@
 # Run this in R or Rscript from the project root
 
 pkgs <- c("shiny", "bslib", "shinydashboard", "shinyWidgets", "DT", "rhandsontable",
-          "dplyr", "tidyr", "ggplot2", "plotly", "readxl", "writexl", "broom", "psych")
+          "dplyr", "tidyr", "ggplot2", "plotly", "readxl", "writexl", "broom", "psych",
+          "rmarkdown", "knitr", "tinytex")
 
 local_lib <- file.path(getwd(), ".r-lib")
 dir.create(local_lib, recursive = TRUE, showWarnings = FALSE)
@@ -19,4 +20,18 @@ install_if_missing <- function(pkg) {
 
 invisible(lapply(pkgs, install_if_missing))
 cat("\nDone! Local library:", normalizePath(local_lib, winslash = "/", mustWork = FALSE), "\n")
+
+if (!tinytex::is_tinytex()) {
+  cat("TinyTeX not found. Installing now (this may take a few minutes)...\n")
+  tryCatch(
+    tinytex::install_tinytex(),
+    error = function(e) {
+      cat("TinyTeX installation failed:", conditionMessage(e), "\n")
+      cat("Install manually or ensure a LaTeX distribution is available.\n")
+    }
+  )
+} else {
+  cat("TinyTeX already installed.\n")
+}
+
 cat("Run: shiny::runApp('.')\n")
