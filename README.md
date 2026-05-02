@@ -2,7 +2,7 @@
 
 > 🌿 Professional Environmental Data Filtering & Statistical Analysis Module
 
-An **R Shiny** application for importing, exploring, cleaning, and statistically analyzing environmental sample data. It provides interactive outlier detection, ANOVA, hypothesis testing, and data-export capabilities through a dark-themed, responsive UI.
+An **R Shiny** application for importing, exploring, cleaning, and statistically analyzing environmental sample data. It provides interactive outlier detection, ANOVA, hypothesis testing, linear regression, composite variable creation, and data-export capabilities through a dark-themed, responsive UI.
 
 ---
 
@@ -14,7 +14,16 @@ An **R Shiny** application for importing, exploring, cleaning, and statistically
 | **Outlier Detection** | Detect outliers per numeric column using the IQR method (configurable *k*). Interactive boxplots and detail tables. |
 | **ANOVA Analysis** | One-way ANOVA with Tukey HSD post-hoc tests and group-comparison plots. |
 | **Data Cleaning** | Remove, Winsorize (cap), or replace outliers with `NA`. Export cleaned data as CSV or Excel. |
-| **Statistical Inference** | Normality check (Shapiro-Wilk), independent / paired t-tests, chi-square test of independence, and correlation heatmap. |
+| **Statistical Inference** | Normality check (Shapiro-Wilk), independent / paired t-tests, chi-square test of independence, and correlation heatmap. Includes composite variable builder and Cronbach's Alpha reliability analysis. |
+| **Regression Analysis** | Linear regression with composite variable support. Scatter plots with regression line, correlation coefficient, and automatic hypothesis interpretation. |
+
+### Statistical Highlights
+
+- **Composite Variables**: Create row-wise mean scores from multiple Likert-scale items or measurements. Works in both Statistical Inference and Regression tabs.
+- **Cronbach's Alpha**: Internal consistency reliability check using the `psych` package.
+- **Directional T-tests**: Choose alternative hypothesis direction (Two-sided / Less / Greater) for independent t-tests.
+- **Group Descriptives**: Automatic Mean, SD, and *n* table for t-test group comparisons.
+- **Regression Modeling**: Supports single-column or multi-column composite variables for both independent (X) and dependent (Y) variables.
 
 ---
 
@@ -51,7 +60,7 @@ The app will be available at `http://127.0.0.1:3819` (or an auto-assigned port).
 | Visualization | ggplot2 + plotly |
 | Data Wrangling | dplyr, tidyr |
 | I/O | readxl, writexl |
-| Statistics | R base stats, broom |
+| Statistics | R base stats, broom, psych |
 
 ---
 

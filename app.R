@@ -3,18 +3,20 @@
 # All statistical logic uses R base & R libraries
 # ============================================================
 
-library(shiny)
-library(bslib)
-library(shinyWidgets)
-library(DT)
-library(rhandsontable)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(plotly)
-library(readxl)
-library(writexl)
-library(broom)
+suppressPackageStartupMessages({
+  library(shiny)
+  library(bslib)
+  library(shinyWidgets)
+  library(DT)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(plotly)
+  library(readxl)
+  library(writexl)
+  library(broom)
+  library(psych)
+})
 
 # ============================================================
 # HELPER FUNCTIONS (Pure R Logic)
@@ -25,13 +27,12 @@ library(broom)
 #' @param k multiplier for IQR (default 1.5)
 #' @return logical vector (TRUE = outlier)
 detect_outliers_iqr <- function(x, k = 1.5) {
-  x <- as.numeric(x)
-  q <- stats::quantile(x, probs = c(0.25, 0.75), na.rm = TRUE)
-  iqr_val <- stats::IQR(x, na.rm = TRUE)
+  x_num <- as.numeric(x)
+  q <- stats::quantile(x_num, probs = c(0.25, 0.75), na.rm = TRUE)
+  iqr_val <- stats::IQR(x_num, na.rm = TRUE)
   lower <- q[1] - k * iqr_val
   upper <- q[2] + k * iqr_val
-  is_outlier <- !is.na(x) & (x < lower | x > upper)
-  return(is_outlier)
+  !is.na(x_num) & (x_num < lower | x_num > upper)
 }
 
 #' Get outlier bounds using IQR
@@ -39,16 +40,10 @@ detect_outliers_iqr <- function(x, k = 1.5) {
 #' @param k multiplier for IQR (default 1.5)
 #' @return named list with lower, upper, q1, q3, iqr
 get_outlier_bounds <- function(x, k = 1.5) {
-  x <- as.numeric(x)
-  q <- stats::quantile(x, probs = c(0.25, 0.75), na.rm = TRUE)
-  iqr_val <- stats::IQR(x, na.rm = TRUE)
-  list(
-    q1 = q[1],
-    q3 = q[2],
-    iqr = iqr_val,
-    lower = q[1] - k * iqr_val,
-    upper = q[2] + k * iqr_val
-  )
+  x_num <- as.numeric(x)
+  q <- stats::quantile(x_num, probs = c(0.25, 0.75), na.rm = TRUE)
+  iqr_val <- stats::IQR(x_num, na.rm = TRUE)
+  list(q1 = q[1], q3 = q[2], iqr = iqr_val, lower = q[1] - k * iqr_val, upper = q[2] + k * iqr_val)
 }
 
 #' Cap (Winsorize) outliers to IQR bounds
@@ -56,11 +51,9 @@ get_outlier_bounds <- function(x, k = 1.5) {
 #' @param k multiplier for IQR (default 1.5)
 #' @return numeric vector with outliers capped
 cap_outliers <- function(x, k = 1.5) {
-  x <- as.numeric(x)
-  bounds <- get_outlier_bounds(x, k)
-  x_capped <- ifelse(x < bounds$lower, bounds$lower,
-                      ifelse(x > bounds$upper, bounds$upper, x))
-  return(x_capped)
+  x_num <- as.numeric(x)
+  bounds <- get_outlier_bounds(x_num, k)
+  pmin(pmax(x_num, bounds$lower), bounds$upper)
 }
 
 #' Run one-way ANOVA
@@ -105,6 +98,40 @@ get_factor_cols <- function(data) {
   names(data)[sapply(data, function(x) is.character(x) || is.factor(x))]
 }
 
+format_hypothesis_variable_label <- function(result) {
+  if (!is.null(result$variable) && length(result$variable) > 0) {
+    return(as.character(result$variable[[1]]))
+  }
+  if (!is.null(result$variables) && length(result$variables) > 0) {
+    return(paste(result$variables, collapse = ", "))
+  }
+  if (!is.null(result$before) && !is.null(result$after) &&
+      length(result$before) > 0 && length(result$after) > 0) {
+    return(paste(result$before[[1]], "vs", result$after[[1]]))
+  }
+  if (!is.null(result$var1) && !is.null(result$var2) &&
+      length(result$var1) > 0 && length(result$var2) > 0) {
+    return(paste(result$var1[[1]], "vs", result$var2[[1]]))
+  }
+  "N/A"
+}
+
+format_hypothesis_metric <- function(value, digits = NULL, scientific = FALSE) {
+  if (is.null(value) || length(value) == 0 || all(is.na(value))) {
+    return("N/A")
+  }
+  
+  scalar <- value[[1]]
+  if (!is.null(digits) && is.numeric(scalar)) {
+    if (scientific) {
+      return(formatC(scalar, format = "e", digits = digits))
+    }
+    return(as.character(round(scalar, digits)))
+  }
+  
+  as.character(scalar)
+}
+
 # ============================================================
 # HYPOTHESIS TESTING FUNCTIONS
 # ============================================================
@@ -134,29 +161,27 @@ run_chi_square <- function(data, var1, var2) {
 #' @param value_col numeric column
 #' @param group_col binary grouping column
 #' @return list with test results
-run_ttest_independent <- function(data, value_col, group_col) {
+run_ttest_independent <- function(data, value_col, group_col, alternative = "two.sided") {
   vals <- data[[value_col]]
   grp <- data[[group_col]]
-  
-  # Levene's test (using car::leveneTest or manual)
+
   grp_levels <- unique(grp[!is.na(grp)])
   if (length(grp_levels) != 2) stop("Grouping variable must have exactly 2 levels")
-  
+
   g1 <- vals[grp == grp_levels[1] & !is.na(vals)]
   g2 <- vals[grp == grp_levels[2] & !is.na(vals)]
-  
-  # Manual Levene: absolute deviations from median
+
   med1 <- median(g1, na.rm = TRUE)
   med2 <- median(g2, na.rm = TRUE)
   dev1 <- abs(g1 - med1)
   dev2 <- abs(g2 - med2)
   levene_f <- stats::var.test(dev1, dev2)$statistic
   levene_p <- stats::var.test(dev1, dev2)$p.value
-  
+
   var_equal <- levene_p > 0.05
-  
-  test <- stats::t.test(vals ~ grp, data = data, var.equal = var_equal)
-  
+
+  test <- stats::t.test(vals ~ grp, data = data, var.equal = var_equal, alternative = alternative)
+
   list(
     method = if (var_equal) "Independent T-test (equal variance)" else "Independent T-test (Welch's)",
     statistic = test$statistic,
@@ -166,10 +191,13 @@ run_ttest_independent <- function(data, value_col, group_col) {
     mean_g2 = mean(g2, na.rm = TRUE),
     sd_g1 = stats::sd(g1, na.rm = TRUE),
     sd_g2 = stats::sd(g2, na.rm = TRUE),
+    n_g1 = length(g1),
+    n_g2 = length(g2),
     levene_p = levene_p,
     var_equal = var_equal,
     g1_name = as.character(grp_levels[1]),
-    g2_name = as.character(grp_levels[2])
+    g2_name = as.character(grp_levels[2]),
+    alternative = alternative
   )
 }
 
@@ -227,9 +255,9 @@ make_qq_plot <- function(x, title = "Q-Q Plot") {
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
       panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
-      plot.title = ggplot2::element_text(color = "#e2e8f0"),
-      axis.text = ggplot2::element_text(color = "#94a3b8"),
-      axis.title = ggplot2::element_text(color = "#94a3b8"),
+      plot.title = ggplot2::element_text(color = "#FFFFFF"),
+      axis.text = ggplot2::element_text(color = "#E0E0E0"),
+      axis.title = ggplot2::element_text(color = "#E0E0E0"),
       panel.grid.major = ggplot2::element_line(color = "#334155"),
       panel.grid.minor = ggplot2::element_line(color = "#1e293b")
     ) +
@@ -241,20 +269,31 @@ make_qq_plot <- function(x, title = "Q-Q Plot") {
 #' @param cols numeric columns
 #' @return list with matrix, p_values
 run_correlation <- function(data, cols) {
+  if (length(cols) < 2) {
+    stop("Select at least 2 numeric variables for correlation.")
+  }
+  
   df <- data[, cols, drop = FALSE]
   df <- df[sapply(df, is.numeric)]
+  if (ncol(df) < 2) {
+    stop("Select at least 2 numeric variables for correlation.")
+  }
   
   cor_mat <- stats::cor(df, use = "pairwise.complete.obs")
   
-  # p-values
-  p_mat <- matrix(NA, ncol = ncol(cor_mat), nrow = nrow(cor_mat))
-  for (i in seq_len(ncol(df))) {
-    for (j in seq_len(ncol(df))) {
-      if (i != j) {
-        test <- stats::cor.test(df[[i]], df[[j]])
-        p_mat[i, j] <- test$p.value
-      } else {
+  n <- ncol(df)
+  p_mat <- matrix(NA, nrow = n, ncol = n)
+  for (i in seq_len(n)) {
+    for (j in seq_len(n)) {
+      if (i == j) {
         p_mat[i, j] <- 0
+      } else if (j > i) {
+        complete_rows <- stats::complete.cases(df[[i]], df[[j]])
+        if (sum(complete_rows) >= 3) {
+          test <- stats::cor.test(df[[i]][complete_rows], df[[j]][complete_rows])
+          p_mat[i, j] <- test$p.value
+          p_mat[j, i] <- test$p.value
+        }
       }
     }
   }
@@ -264,6 +303,42 @@ run_correlation <- function(data, cols) {
   list(correlation = cor_mat, p_values = p_mat)
 }
 
+#' Linear Regression Analysis
+#' @param data data.frame
+#' @param x_col name of independent variable column
+#' @param y_col name of dependent variable column
+#' @return list with model summary
+run_regression_analysis <- function(data, x_col, y_col) {
+  df <- data[, c(x_col, y_col), drop = FALSE]
+  df <- df[stats::complete.cases(df), , drop = FALSE]
+  if (nrow(df) < 3) stop("Need at least 3 complete cases for regression.")
+
+  formula_str <- paste0("`", y_col, "` ~ `", x_col, "`")
+  model <- stats::lm(stats::as.formula(formula_str), data = df)
+  sm <- summary(model)
+
+  coefs <- stats::coef(sm)
+  intercept <- round(coefs[1, 1], 3)
+  slope <- round(coefs[2, 1], 3)
+  p_value <- round(coefs[2, 4], 3)
+  r_squared <- round(sm$r.squared, 3)
+  adj_r_squared <- round(sm$adj.r.squared, 3)
+
+  cor_test <- stats::cor.test(df[[x_col]], df[[y_col]])
+  correlation <- round(cor_test$estimate, 3)
+
+  list(
+    intercept = intercept,
+    slope = slope,
+    p_value = p_value,
+    r_squared = r_squared,
+    adj_r_squared = adj_r_squared,
+    correlation = correlation,
+    model = model,
+    n = nrow(df)
+  )
+}
+
 # ============================================================
 # THEME & UI
 # ============================================================
@@ -271,22 +346,19 @@ dark_theme <- bs_theme(
   version = 5,
   bootswatch = "darkly",
   primary = "#0ea5e9",
-  secondary = "#64748b",
+  secondary = "#E0E0E0",
   success = "#10b981",
   warning = "#f59e0b",
   danger = "#ef4444",
   info = "#38bdf8",
-  base_font = font_google("Inter"),
-  heading_font = font_google("Inter"),
-  code_font = font_google("Fira Code"),
   "navbar-bg" = "#0f172a",
   "body-bg" = "#0b1120",
-  "body-color" = "#e2e8f0",
+  "body-color" = "#FFFFFF",
   "card-bg" = "#1e293b",
   "card-border-color" = "#334155",
   "input-bg" = "#0f172a",
   "input-border-color" = "#334155",
-  "input-color" = "#e2e8f0"
+  "input-color" = "#FFFFFF"
 )
 
 ui <- page_sidebar(
@@ -302,7 +374,7 @@ ui <- page_sidebar(
     width = 260,
     class = "bg-dark",
     title = tags$div(
-      style = "font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;",
+      style = "font-size: 12px; color: #E0E0E0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;",
       "Navigation"
     ),
     navset_pill_list(
@@ -310,13 +382,14 @@ ui <- page_sidebar(
       widths = c(12, 12),
       nav_panel("Data Import", value = "import", icon = icon("upload")),
       nav_panel("Outlier Detection", value = "outliers", icon = icon("magnifying-glass")),
-      nav_panel("ANOVA Analysis", value = "anova", icon = icon("chart-column")),
-      nav_panel("Data Cleaning", value = "cleaning", icon = icon("filter")),
-      nav_panel("Statistical Inference", value = "hypothesis", icon = icon("flask"))
+    nav_panel("ANOVA Analysis", value = "anova", icon = icon("chart-column")),
+    nav_panel("Data Cleaning", value = "cleaning", icon = icon("filter")),
+    nav_panel("Statistical Inference", value = "hypothesis", icon = icon("flask")),
+    nav_panel("Regression Analysis", value = "regression", icon = icon("chart-line"))
     ),
     tags$hr(style = "border-color: #334155;"),
     tags$div(
-      style = "font-size: 11px; color: #64748b; padding: 0 4px;",
+      style = "font-size: 11px; color: #E0E0E0; padding: 0 4px;",
       tags$p("EnviroAnalyzer Pro"),
       tags$p("R Shiny Data Filtering Module"),
       tags$p(paste("R version:", R.version.string))
@@ -328,27 +401,31 @@ ui <- page_sidebar(
     :root { --ea-primary: #0ea5e9; --ea-success: #10b981; --ea-warning: #f59e0b; --ea-danger: #ef4444; }
     body { background-color: #0b1120 !important; }
     .bslib-page-sidebar > .bslib-sidebar-layout > .bslib-sidebar { background: #0f172a !important; border-right: 1px solid #1e293b; }
-    .nav-pills .nav-link { color: #94a3b8; border-radius: 8px; margin-bottom: 4px; font-size: 14px; }
-    .nav-pills .nav-link:hover { background: #1e293b; color: #e2e8f0; }
+    .nav-pills .nav-link { color: #E0E0E0; border-radius: 8px; margin-bottom: 4px; font-size: 14px; }
+    .nav-pills .nav-link:hover { background: #1e293b; color: #FFFFFF; }
     .nav-pills .nav-link.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; font-weight: 600; }
     
     /* === GLOBAL INPUT FIXES === */
     /* Remove conflicting z-index on inputs */
     .shiny-input-container { width: 100% !important; max-width: 100% !important; position: relative; margin-bottom: 16px !important; }
     /* Ensure labels sit above inputs */
-    .shiny-input-container > label { position: relative; z-index: 2; display: block; margin-bottom: 6px; font-weight: 500; color: #e2e8f0; }
+    .shiny-input-container > label { position: relative; z-index: 2; display: block; margin-bottom: 6px; font-weight: 500; color: #FFFFFF; }
     /* Natural height for all inputs */
     .shiny-input-container .form-control { height: auto; min-height: 38px; line-height: 1.5; }
     /* Radio buttons spacing */
     .shiny-input-container .radio { margin-bottom: 10px; padding: 2px 0; }
-    .shiny-input-container .radio label { display: flex; align-items: center; gap: 8px; color: #e2e8f0; }
+    .shiny-input-container .radio label { display: flex; align-items: center; gap: 8px; color: #FFFFFF; }
     /* Numeric input */
     .shiny-input-container input[type='number'] { height: auto; min-height: 38px; padding: 8px 12px; }
     /* Selectize dropdown */
     .selectize-control { width: 100% !important; position: relative; z-index: auto; }
-    .selectize-input { background: #0f172a !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 8px; width: 100% !important; min-height: 38px; padding: 8px 12px; line-height: 1.5; }
-    .selectize-dropdown { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; z-index: 1000; }
+    .selectize-input { background: #0f172a !important; border: 1px solid #334155 !important; color: #FFFFFF !important; border-radius: 8px; width: 100% !important; min-height: 38px; padding: 8px 12px; line-height: 1.5; }
+    .selectize-dropdown { background: #1e293b; border: 1px solid #334155; color: #FFFFFF; z-index: 1000; }
     .selectize-dropdown .active { background: #0ea5e9; color: #fff; }
+    .selectize-control.multi .selectize-input > div { background: rgba(14,165,233,0.25); color: #FFFFFF; border: 1px solid #0ea5e9; border-radius: 4px; }
+    .selectize-control.multi .selectize-input > div .remove { color: #FFFFFF; }
+    .selectize-dropdown .option { color: #FFFFFF; }
+    .selectize-dropdown .option.active { color: #fff; }
     /* File input */
     .shiny-input-container .input-group { display: flex; flex-direction: column; gap: 4px; }
     .shiny-input-container .form-file { height: auto; }
@@ -356,7 +433,7 @@ ui <- page_sidebar(
     /* === CARD LAYOUT FIXES === */
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); height: auto; min-height: 100%; display: flex; flex-direction: column; }
     .card-body { flex: 1 1 auto; padding: 16px; overflow: visible; }
-    .card-header { background: #0f172a; border-bottom: 1px solid #334155; color: #e2e8f0; font-weight: 600; border-radius: 12px 12px 0 0 !important; padding: 12px 16px; }
+    .card-header { background: #0f172a; border-bottom: 1px solid #334155; color: #FFFFFF; font-weight: 600; border-radius: 12px 12px 0 0 !important; padding: 12px 16px; }
     
     /* === BUTTON FIXES === */
     .btn-primary { background: linear-gradient(135deg, #0ea5e9, #38bdf8); border: none; font-weight: 500; }
@@ -368,25 +445,25 @@ ui <- page_sidebar(
     .btn:last-child { margin-bottom: 0; }
     
     /* === FORM CONTROL FIXES === */
-    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; width: 100% !important; height: auto; min-height: 38px; padding: 8px 12px; }
+    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #FFFFFF; border-radius: 8px; width: 100% !important; height: auto; min-height: 38px; padding: 8px 12px; }
     .form-control:focus, .form-select:focus { border-color: #0ea5e9; box-shadow: 0 0 0 0.2rem rgba(14,165,233,0.25); }
     
     /* === VALUE BOX & BADGES === */
     .value-box { border-radius: 12px; border: 1px solid #334155; }
     .stat-badge { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 100px; }
-    .stat-badge .stat-icon { font-size: 14px; color: #64748b; }
-    .stat-badge .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-badge .stat-value { font-size: 16px; font-weight: 700; color: #e2e8f0; }
+    .stat-badge .stat-icon { font-size: 14px; color: #E0E0E0; }
+    .stat-badge .stat-label { font-size: 11px; color: #E0E0E0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-badge .stat-value { font-size: 16px; font-weight: 700; color: #FFFFFF; }
     
     /* === TABLE FIXES === */
-    table.dataTable { color: #e2e8f0 !important; }
-    table.dataTable thead th { background: #0f172a !important; color: #e2e8f0 !important; border-bottom: 1px solid #293548 !important; font-weight: 600; font-size: 13px; padding: 8px 12px !important; }
-    table.dataTable tbody td { border-bottom: 1px solid #293548 !important; color: #e2e8f0 !important; padding: 6px 12px !important; }
+    table.dataTable { color: #FFFFFF !important; }
+    table.dataTable thead th { background: #0f172a !important; color: #FFFFFF !important; border-bottom: 1px solid #293548 !important; font-weight: 600; font-size: 13px; padding: 8px 12px !important; }
+    table.dataTable tbody td { border-bottom: 1px solid #293548 !important; color: #FFFFFF !important; padding: 6px 12px !important; }
     table.dataTable tbody tr:hover td { background: #172033 !important; }
     table.dataTable tbody tr.odd { background-color: rgba(15,23,42,0.3) !important; }
     table.dataTable tbody tr.odd:hover { background-color: #172033 !important; }
-    .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #94a3b8 !important; }
-    .dataTables_wrapper .dataTables_paginate .paginate_button { color: #94a3b8 !important; }
+    .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #E0E0E0 !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button { color: #E0E0E0 !important; }
     .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #0ea5e9 !important; color: #fff !important; border: none; }
     .dataTables_scrollHead { border-bottom: 1px solid #293548 !important; }
     .dataTables_scrollBody { overflow-x: auto !important; overflow-y: auto !important; }
@@ -394,11 +471,11 @@ ui <- page_sidebar(
     
     /* === TAB & NAV FIXES === */
     .tab-content { padding-top: 12px; }
-    .nav-tabs .nav-link { color: #94a3b8; border: none; border-bottom: 2px solid transparent; }
-    .nav-tabs .nav-link:hover { color: #e2e8f0; border-bottom-color: #334155; }
+    .nav-tabs .nav-link { color: #E0E0E0; border: none; border-bottom: 2px solid transparent; }
+    .nav-tabs .nav-link:hover { color: #FFFFFF; border-bottom-color: #334155; }
     .nav-tabs .nav-link.active { color: #0ea5e9; background: transparent; border-bottom-color: #0ea5e9; }
     hr { border-color: #334155; }
-    .text-muted { color: #64748b !important; }
+    .text-muted { color: #E0E0E0 !important; }
     textarea { width: 100% !important; box-sizing: border-box; }
     .plotly { width: 100% !important; }
     
@@ -406,12 +483,12 @@ ui <- page_sidebar(
     .upload-zone { border: 2px dashed #334155; border-radius: 12px; padding: 24px; text-align: center; transition: all 0.2s ease; cursor: pointer; }
     .upload-zone:hover { border-color: #0ea5e9; background: #0f172a; }
     .upload-zone.has-file { border-color: #10b981; background: #064e3b; }
-    .upload-zone .btn-file { background: transparent; border: none; color: #94a3b8; }
+    .upload-zone .btn-file { background: transparent; border: none; color: #E0E0E0; }
     
     /* === SHEET TABS === */
     .sheet-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
-    .sheet-tab { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; }
-    .sheet-tab:hover { background: #1e293b; color: #e2e8f0; }
+    .sheet-tab { background: #0f172a; border: 1px solid #334155; color: #E0E0E0; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; }
+    .sheet-tab:hover { background: #1e293b; color: #FFFFFF; }
     .sheet-tab.active { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; border-color: transparent; font-weight: 600; }
     
     /* === PREVIEW TABLE === */
@@ -427,13 +504,13 @@ ui <- page_sidebar(
     .shiny-file-input-progress { display: none; }
     
     /* === NO-DATA WARNING === */
-    .no-data-warning { text-align: center; padding: 60px 20px; color: #64748b; }
+    .no-data-warning { text-align: center; padding: 60px 20px; color: #E0E0E0; }
     .no-data-warning .fa-3x { margin-bottom: 16px; }
     
     /* === NOTIFICATION & MODAL SOLID BG === */
-    .shiny-notification { background: #1e293b !important; color: #e2e8f0 !important; border: 1px solid #334155 !important; border-radius: 8px; opacity: 1 !important; z-index: 9999; }
-    .shiny-notification-close { color: #94a3b8 !important; }
-    .modal-content { background: #1e293b !important; color: #e2e8f0 !important; border: 1px solid #334155; }
+    .shiny-notification { background: #1e293b !important; color: #FFFFFF !important; border: 1px solid #334155 !important; border-radius: 8px; opacity: 1 !important; z-index: 9999; }
+    .shiny-notification-close { color: #E0E0E0 !important; }
+    .modal-content { background: #1e293b !important; color: #FFFFFF !important; border: 1px solid #334155; }
     .modal-backdrop { opacity: 0.8 !important; }
     
     /* === OUTLIER SUMMARY === */
@@ -451,7 +528,7 @@ ui <- page_sidebar(
     .cleaning-table-container table.dataTable { table-layout: fixed !important; width: 100% !important; }
     .cleaning-table-container .dataTables_scroll { overflow: hidden; }
     .cleaning-table-container .dataTables_filter { float: none; text-align: left; margin-bottom: 12px; padding: 0 4px; }
-    .cleaning-table-container .dataTables_filter input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 4px 8px; }
+    .cleaning-table-container .dataTables_filter input { background: #0f172a; border: 1px solid #334155; color: #FFFFFF; border-radius: 6px; padding: 4px 8px; }
     .cleaning-actions { margin-bottom: 10px; }
     .cleaning-actions .btn { margin-bottom: 10px; }
     
@@ -490,7 +567,10 @@ ui <- page_sidebar(
           conditionalPanel(
             condition = "input.hypothesis_test_type == 'ttest_ind'",
             selectInput("ttest_value_col", "Numeric Variable", choices = NULL),
-            selectInput("ttest_group_col", "Grouping Variable (2 levels)", choices = NULL)
+            selectInput("ttest_group_col", "Grouping Variable (2 levels)", choices = NULL),
+            radioButtons("ttest_direction", "Alternative Hypothesis",
+                         choices = c("Two-sided" = "two.sided", "Less" = "less", "Greater" = "greater"),
+                         selected = "two.sided")
           ),
           conditionalPanel(
             condition = "input.hypothesis_test_type == 'ttest_paired'",
@@ -507,7 +587,19 @@ ui <- page_sidebar(
             selectInput("corr_cols", "Select Numeric Variables", choices = NULL, multiple = TRUE)
           ),
           actionButton("run_hypothesis", "Run Test",
-                       icon = icon("play"), class = "btn-primary w-100 mt-2")
+                       icon = icon("play"), class = "btn-primary w-100 mt-2"),
+          tags$hr(),
+          tags$h6("Composite Variable"),
+          selectInput("composite_cols", "Columns to Average", choices = NULL, multiple = TRUE),
+          textInput("composite_name", "New Variable Name", value = "Composite_Score"),
+          actionButton("create_composite", "Create Composite",
+                       icon = icon("calculator"), class = "btn-secondary w-100 mt-2"),
+          tags$hr(),
+          tags$h6("Reliability Analysis"),
+          selectInput("alpha_cols", "Item Columns (Cronbach's Alpha)", choices = NULL, multiple = TRUE),
+          actionButton("run_alpha", "Calculate Alpha",
+                       icon = icon("check-double"), class = "btn-secondary w-100 mt-2"),
+          uiOutput("alpha_result")
         ),
         card(
           class = "hypothesis-card",
@@ -515,6 +607,12 @@ ui <- page_sidebar(
           full_screen = TRUE,
           uiOutput("hypothesis_summary"),
           tags$hr(),
+          conditionalPanel(
+            condition = "input.hypothesis_test_type == 'ttest_ind'",
+            tags$h6(style = "color: #FFFFFF; margin-top: 12px;", "Group Descriptives"),
+            DT::dataTableOutput("ttest_descriptive_table"),
+            tags$hr()
+          ),
           navset_card_tab(
             nav_panel("Summary Table", DT::dataTableOutput("hypothesis_table")),
             nav_panel("Visualization", plotlyOutput("hypothesis_plot", height = "500px"))
@@ -523,7 +621,46 @@ ui <- page_sidebar(
       )
     )
   ),
-  
+
+  # ---- TAB: REGRESSION ANALYSIS ----
+  conditionalPanel(
+    condition = "input.tabs == 'regression'",
+    style = "position: relative; z-index: 1;",
+    uiOutput("regression_no_data"),
+    conditionalPanel(
+      condition = "true",
+      layout_columns(
+        col_widths = c(3, 9),
+        card(
+          class = "hypothesis-card",
+          card_header(tags$span(icon("chart-line"), " Model Configuration")),
+          tags$h6("Independent Variable (X)"),
+          selectInput("reg_x_cols", "Columns to Average", choices = NULL, multiple = TRUE),
+          textInput("reg_x_name", "Variable Name", value = ""),
+          tags$hr(),
+          tags$h6("Dependent Variable (Y)"),
+          selectInput("reg_y_cols", "Columns to Average", choices = NULL, multiple = TRUE),
+          textInput("reg_y_name", "Variable Name", value = ""),
+          actionButton("run_regression", "Run Regression",
+                       icon = icon("play"), class = "btn-primary w-100 mt-2")
+        ),
+        card(
+          class = "hypothesis-card",
+          card_header(tags$span(icon("chart-bar"), " Results")),
+          full_screen = TRUE,
+          uiOutput("regression_summary"),
+          tags$hr(),
+          navset_card_tab(
+            nav_panel("Summary Table", DT::dataTableOutput("regression_table")),
+            nav_panel("Visualization", plotlyOutput("regression_plot", height = "500px"))
+          ),
+          tags$hr(),
+          uiOutput("regression_interpretation")
+        )
+      )
+    )
+  ),
+
   # ---- TAB: DATA IMPORT ----
   conditionalPanel(
     condition = "input.tabs == 'import'",
@@ -538,7 +675,7 @@ ui <- page_sidebar(
         tags$h6("Paste Data (Tab-separated)"),
         tags$textarea(
           id = "paste_data", rows = 4,
-          style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
+          style = "width:100%; font-family: monospace; font-size: 12px; background:#0f172a; color:#FFFFFF; border:1px solid #334155; border-radius:8px; padding:8px; box-sizing:border-box;",
           placeholder = "Paste tab-separated data here...\nHeader1\tHeader2\tHeader3\nVal1\tVal2\tVal3"
         ),
         actionButton("parse_paste", tags$span(icon("clipboard"), " Parse"),
@@ -704,30 +841,74 @@ server <- function(input, output, session) {
              tags$p("Import data first using the Data Import tab.")
     )
   })
-  
+
+  output$regression_no_data <- renderUI({
+    req(is.null(raw_data()))
+    tags$div(class = "no-data-warning",
+             tags$div(icon("file-circle-question", class = "fa-3x")),
+             tags$h4("No Data Loaded"),
+             tags$p("Import data first using the Data Import tab.")
+    )
+  })
+
   # Reactive: raw uploaded data
   raw_data <- reactiveVal(NULL)
-  
+
   # Reactive: cleaned data
   cleaned_data <- reactiveVal(NULL)
-  
+
+  # Reactive: cleaned sheets data (preserves per-sheet cleaning state)
+  cleaned_sheets_data <- reactiveVal(list())
+
   # Reactive: outlier detection results
   outlier_results <- reactiveVal(NULL)
-  
+
   # Reactive: ANOVA results
   anova_results <- reactiveVal(NULL)
-  
+
   # Reactive: Hypothesis test results
   hypothesis_results <- reactiveVal(NULL)
-  
+
+  # Reactive: Cronbach's alpha result
+  alpha_result <- reactiveVal(NULL)
+
+  # Reactive: Regression results
+  regression_results <- reactiveVal(NULL)
+
   # Reactive: sheets data (list of dataframes)
   sheets_data <- reactiveVal(list())
-  
+
   # Reactive: active sheet name
   active_sheet <- reactiveVal("Sheet 1")
-  
+
   # Reactive: uploaded filename
   uploaded_filename <- reactiveVal(NULL)
+
+  get_active_analysis_data <- reactive({
+    if (!is.null(cleaned_data())) {
+      return(cleaned_data())
+    }
+    raw_data()
+  }) %>% bindCache(raw_data(), cleaned_data())
+
+  reset_analysis_results <- function() {
+    outlier_results(NULL)
+    anova_results(NULL)
+    hypothesis_results(NULL)
+    regression_results(NULL)
+  }
+  
+  sync_loaded_data <- function(raw_sheets, file_label) {
+    first_sheet <- names(raw_sheets)[1]
+    sheets_data(raw_sheets)
+    cleaned_sheets_data(raw_sheets)
+    active_sheet(first_sheet)
+    uploaded_filename(file_label)
+    raw_data(raw_sheets[[first_sheet]])
+    cleaned_data(raw_sheets[[first_sheet]])
+    reset_analysis_results()
+    update_column_selectors(raw_sheets[[first_sheet]])
+  }
   
   # ---- FILE UPLOAD ----
   observeEvent(input$file_upload, {
@@ -740,11 +921,7 @@ server <- function(input, output, session) {
         if (ext == "csv") {
           incProgress(0.3, detail = "Parsing CSV")
           data <- utils::read.csv(input$file_upload$datapath, stringsAsFactors = FALSE)
-          sheets_data(list("Sheet 1" = data))
-          active_sheet("Sheet 1")
-          raw_data(data)
-          cleaned_data(data)
-          update_column_selectors(data)
+          sync_loaded_data(list("Sheet 1" = data), input$file_upload$name)
           incProgress(0.7, detail = "Done")
         } else if (ext %in% c("xlsx", "xls")) {
           incProgress(0.2, detail = "Reading sheets")
@@ -753,11 +930,7 @@ server <- function(input, output, session) {
             as.data.frame(readxl::read_excel(input$file_upload$datapath, sheet = s))
           })
           names(all_sheets) <- sheet_names
-          sheets_data(all_sheets)
-          active_sheet(sheet_names[1])
-          raw_data(all_sheets[[1]])
-          cleaned_data(all_sheets[[1]])
-          update_column_selectors(all_sheets[[1]])
+          sync_loaded_data(all_sheets, input$file_upload$name)
           incProgress(0.8, detail = "Done")
         } else {
           stop("Unsupported file format. Use CSV or Excel.")
@@ -795,12 +968,7 @@ server <- function(input, output, session) {
         )
       }
       
-      sheets_data(list("Sheet 1" = data))
-      active_sheet("Sheet 1")
-      uploaded_filename("sample_data.csv")
-      raw_data(data)
-      cleaned_data(data)
-      update_column_selectors(data)
+      sync_loaded_data(list("Sheet 1" = data), "sample_data.csv")
       showNotification(paste("Loaded sample data:", nrow(data), "rows"), type = "message")
     }, error = function(e) {
       showNotification(paste("Error loading sample:", e$message), type = "error")
@@ -828,12 +996,7 @@ server <- function(input, output, session) {
         }
       }
       
-      sheets_data(list("Sheet 1" = data))
-      active_sheet("Sheet 1")
-      uploaded_filename("pasted_data")
-      raw_data(data)
-      cleaned_data(data)
-      update_column_selectors(data)
+      sync_loaded_data(list("Sheet 1" = data), "pasted_data")
       showNotification(paste("Parsed", nrow(data), "rows,", ncol(data), "columns"), type = "message")
     }, error = function(e) {
       showNotification(paste("Parse error:", e$message), type = "error")
@@ -846,12 +1009,17 @@ server <- function(input, output, session) {
     fac_cols <- get_factor_cols(data)
     all_cols <- names(data)
     
+    frozen <- c("outlier_cols", "clean_cols", "anova_value_col", "anova_group_col",
+                "hypothesis_value_col", "ttest_value_col", "ttest_group_col",
+                "ttest_before", "ttest_after", "chisq_var1", "chisq_var2", "corr_cols",
+                "composite_cols", "alpha_cols", "reg_x_cols", "reg_y_cols")
+    lapply(frozen, function(id) freezeReactiveValue(input, id))
+
     updateSelectInput(session, "outlier_cols", choices = num_cols, selected = num_cols[1:min(3, length(num_cols))])
     updateSelectInput(session, "clean_cols", choices = num_cols, selected = num_cols[1:min(3, length(num_cols))])
     updateSelectInput(session, "anova_value_col", choices = num_cols, selected = num_cols[1])
     updateSelectInput(session, "anova_group_col", choices = c(fac_cols, num_cols), selected = if (length(fac_cols) > 0) fac_cols[length(fac_cols)] else num_cols[1])
-    
-    # Hypothesis testing inputs
+
     updateSelectInput(session, "hypothesis_value_col", choices = num_cols, selected = if (length(num_cols) > 0) num_cols[1] else NULL)
     updateSelectInput(session, "ttest_value_col", choices = num_cols, selected = if (length(num_cols) > 0) num_cols[1] else NULL)
     updateSelectInput(session, "ttest_group_col", choices = c(fac_cols, num_cols), selected = if (length(fac_cols) > 0) fac_cols[1] else if (length(num_cols) > 0) num_cols[1] else NULL)
@@ -860,6 +1028,10 @@ server <- function(input, output, session) {
     updateSelectInput(session, "chisq_var1", choices = all_cols, selected = if (length(all_cols) > 0) all_cols[1] else NULL)
     updateSelectInput(session, "chisq_var2", choices = all_cols, selected = if (length(all_cols) > 1) all_cols[2] else if (length(all_cols) > 0) all_cols[1] else NULL)
     updateSelectInput(session, "corr_cols", choices = num_cols, selected = num_cols[1:min(4, length(num_cols))])
+    updateSelectInput(session, "composite_cols", choices = num_cols, selected = NULL)
+    updateSelectInput(session, "alpha_cols", choices = num_cols, selected = NULL)
+    updateSelectInput(session, "reg_x_cols", choices = num_cols, selected = NULL)
+    updateSelectInput(session, "reg_y_cols", choices = num_cols, selected = NULL)
   }
   
   # ---- UPLOAD ZONE UI ----
@@ -870,14 +1042,14 @@ server <- function(input, output, session) {
       if (has_file) {
         tags$div(
           tags$div(style = "color: #10b981; font-size: 24px; margin-bottom: 8px;", icon("circle-check")),
-          tags$div(style = "color: #e2e8f0; font-weight: 600;", uploaded_filename()),
-          tags$div(style = "color: #64748b; font-size: 12px; margin-top: 4px;", "File loaded successfully")
+          tags$div(style = "color: #FFFFFF; font-weight: 600;", uploaded_filename()),
+          tags$div(style = "color: #E0E0E0; font-size: 12px; margin-top: 4px;", "File loaded successfully")
         )
       } else {
         tags$div(
-          tags$div(style = "color: #64748b; font-size: 32px; margin-bottom: 8px;", icon("cloud-arrow-up")),
-          tags$div(style = "color: #94a3b8; font-weight: 500;", "Drop file here or click to browse"),
-          tags$div(style = "color: #64748b; font-size: 11px; margin-top: 4px;", "Supports CSV, Excel (.xlsx, .xls)")
+          tags$div(style = "color: #E0E0E0; font-size: 32px; margin-bottom: 8px;", icon("cloud-arrow-up")),
+          tags$div(style = "color: #E0E0E0; font-weight: 500;", "Drop file here or click to browse"),
+          tags$div(style = "color: #E0E0E0; font-size: 11px; margin-top: 4px;", "Supports CSV, Excel (.xlsx, .xls)")
         )
       },
       fileInput("file_upload", label = NULL,
@@ -908,12 +1080,16 @@ server <- function(input, output, session) {
   observeEvent(input$sheet_tab_click, {
     req(input$sheet_tab_click)
     active_sheet(input$sheet_tab_click)
-    # Also update raw_data to the selected sheet for other tabs
-    df <- sheets_data()[[input$sheet_tab_click]]
-    if (!is.null(df)) {
-      raw_data(df)
-      cleaned_data(df)
-      update_column_selectors(df)
+    raw_df <- sheets_data()[[input$sheet_tab_click]]
+    clean_df <- cleaned_sheets_data()[[input$sheet_tab_click]]
+    if (!is.null(raw_df)) {
+      if (is.null(clean_df)) {
+        clean_df <- raw_df
+      }
+      raw_data(raw_df)
+      cleaned_data(clean_df)
+      reset_analysis_results()
+      update_column_selectors(clean_df)
     }
   })
   
@@ -933,6 +1109,7 @@ server <- function(input, output, session) {
         searching = TRUE,
         info = FALSE,
         ordering = TRUE,
+        deferRender = TRUE,
         columnDefs = list(list(width = "120px", targets = "_all"))
       ),
       class = "compact row-border",
@@ -941,7 +1118,7 @@ server <- function(input, output, session) {
       style = "default",
       selection = "none"
     )
-  })
+  }, server = TRUE)
   
   output$data_summary_info <- renderUI({
     req(raw_data())
@@ -970,8 +1147,8 @@ server <- function(input, output, session) {
   
   # ---- OUTLIER DETECTION ----
   observeEvent(input$detect_outliers, {
-    req(raw_data(), input$outlier_cols)
-    data <- raw_data()
+    req(get_active_analysis_data(), input$outlier_cols)
+    data <- get_active_analysis_data()
     k <- input$iqr_multiplier
     cols <- input$outlier_cols
     
@@ -1006,9 +1183,9 @@ server <- function(input, output, session) {
   
   # Boxplot
   output$boxplot_chart <- renderPlotly({
-    req(outlier_results(), raw_data())
+    req(outlier_results(), get_active_analysis_data())
     results <- outlier_results()
-    data <- raw_data()
+    data <- get_active_analysis_data()
     cols <- sapply(results, function(r) r$column)
     if (length(cols) == 0) return(NULL)
     
@@ -1025,15 +1202,16 @@ server <- function(input, output, session) {
         legend.position = "none",
         panel.grid.minor = ggplot2::element_blank(),
         axis.title.x = ggplot2::element_blank(),
-        plot.title = ggplot2::element_text(color = "#e2e8f0"),
-        axis.text = ggplot2::element_text(color = "#94a3b8"),
-        axis.title = ggplot2::element_text(color = "#94a3b8")
+        plot.title = ggplot2::element_text(color = "#FFFFFF"),
+        axis.text = ggplot2::element_text(color = "#E0E0E0"),
+        axis.title = ggplot2::element_text(color = "#E0E0E0")
       ) +
       ggplot2::labs(y = "Value", title = "Distribution & Outliers by Parameter") +
       ggplot2::scale_fill_brewer(palette = "Set2")
     
-    plotly::ggplotly(p, tooltip = c("x", "y")) %>%
-      plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+    plotly::ggplotly(p, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+      plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+      plotly::config(displayModeBar = FALSE)
   })
   
   # Outlier summary
@@ -1055,7 +1233,7 @@ server <- function(input, output, session) {
           class = "outlier-stat-card",
           tags$strong(r$column),
           tags$br(),
-          tags$span(style = "font-size: 12px; color: #94a3b8;",
+          tags$span(style = "font-size: 12px; color: #E0E0E0;",
                     paste0(r$n_outliers, " / ", r$n_total, " (", r$pct_outliers, "%)"))
         )
       })
@@ -1088,7 +1266,7 @@ server <- function(input, output, session) {
     
     dt <- DT::datatable(
       detail_df,
-      options = list(pageLength = 10, dom = "frtip"),
+      options = list(pageLength = 10, dom = "frtip", deferRender = TRUE, stateSave = FALSE),
       class = "compact row-border",
       rownames = FALSE
     )
@@ -1102,12 +1280,12 @@ server <- function(input, output, session) {
                          ))
     }
     dt
-  })
+  }, server = TRUE)
   
   # ---- ANOVA ANALYSIS ----
   observeEvent(input$run_anova, {
-    req(raw_data(), input$anova_value_col, input$anova_group_col)
-    data <- raw_data()
+    req(get_active_analysis_data(), input$anova_value_col, input$anova_group_col)
+    data <- get_active_analysis_data()
     
     tryCatch({
       result <- run_anova_analysis(data, input$anova_value_col, input$anova_group_col)
@@ -1122,8 +1300,8 @@ server <- function(input, output, session) {
     req(anova_results())
     tbl <- anova_results()$anova_table
     tbl$p.value <- formatC(tbl$p.value, format = "e", digits = 3)
-    DT::datatable(tbl, options = list(dom = "t"), rownames = FALSE, class = "compact stripe")
-  })
+    DT::datatable(tbl, options = list(dom = "t", deferRender = TRUE), rownames = FALSE, class = "compact stripe")
+  }, server = TRUE)
   
   output$tukey_table <- DT::renderDataTable({
     req(anova_results())
@@ -1132,13 +1310,13 @@ server <- function(input, output, session) {
       return(DT::datatable(data.frame(Message = "Tukey HSD requires at least 2 groups"), rownames = FALSE))
     }
     tbl$`P-value` <- formatC(tbl$`P-value`, format = "e", digits = 3)
-    DT::datatable(tbl, options = list(dom = "t", scrollX = TRUE), rownames = FALSE, class = "compact stripe") %>%
+    DT::datatable(tbl, options = list(dom = "t", scrollX = TRUE, deferRender = TRUE), rownames = FALSE, class = "compact stripe") %>%
       DT::formatRound(c("Difference", "Lower CI", "Upper CI"), digits = 3)
-  })
+  }, server = TRUE)
   
   output$anova_plot <- renderPlotly({
-    req(raw_data(), input$anova_value_col, input$anova_group_col)
-    data <- raw_data()
+    req(anova_results(), get_active_analysis_data())
+    data <- get_active_analysis_data()
     val_col <- input$anova_value_col
     grp_col <- input$anova_group_col
     
@@ -1156,7 +1334,9 @@ server <- function(input, output, session) {
       ) +
       ggplot2::scale_fill_brewer(palette = "Pastel1")
     
-    plotly::ggplotly(p, tooltip = c("x", "y"))
+    plotly::ggplotly(p, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+      plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+      plotly::config(displayModeBar = FALSE)
   })
   
   output$anova_interpretation <- renderUI({
@@ -1184,10 +1364,10 @@ server <- function(input, output, session) {
       tags$p(style = paste0("font-size: 13px; font-weight: bold; color:", color, ";"),
              sig_level),
       if (p_val < 0.05) {
-        tags$p(style = "font-size: 12px; color: #64748b;",
+        tags$p(style = "font-size: 12px; color: #E0E0E0;",
                "Groups are statistically different. Check Tukey HSD for pairwise comparisons.")
       } else {
-        tags$p(style = "font-size: 12px; color: #64748b;",
+        tags$p(style = "font-size: 12px; color: #E0E0E0;",
                "No significant difference between groups at alpha = 0.05.")
       }
     )
@@ -1195,8 +1375,8 @@ server <- function(input, output, session) {
   
   # ---- HYPOTHESIS TESTING ----
   observeEvent(input$run_hypothesis, {
-    req(raw_data())
-    data <- raw_data()
+    req(get_active_analysis_data())
+    data <- get_active_analysis_data()
     test_type <- input$hypothesis_test_type
     
     result <- tryCatch({
@@ -1216,8 +1396,8 @@ server <- function(input, output, session) {
           plot = make_qq_plot(x, paste("Q-Q Plot:", input$hypothesis_value_col))
         )
       } else if (test_type == "ttest_ind") {
-        req(input$ttest_value_col, input$ttest_group_col)
-        res <- run_ttest_independent(data, input$ttest_value_col, input$ttest_group_col)
+        req(input$ttest_value_col, input$ttest_group_col, input$ttest_direction)
+        res <- run_ttest_independent(data, input$ttest_value_col, input$ttest_group_col, alternative = input$ttest_direction)
         list(
           type = "ttest_ind",
           test_name = res$method,
@@ -1231,8 +1411,13 @@ server <- function(input, output, session) {
           levene_p = res$levene_p,
           mean_g1 = res$mean_g1,
           mean_g2 = res$mean_g2,
+          sd_g1 = res$sd_g1,
+          sd_g2 = res$sd_g2,
+          n_g1 = res$n_g1,
+          n_g2 = res$n_g2,
           g1_name = res$g1_name,
           g2_name = res$g2_name,
+          alternative = res$alternative,
           plot_data = data %>% dplyr::select(dplyr::all_of(c(input$ttest_value_col, input$ttest_group_col))) %>% tidyr::drop_na()
         )
       } else if (test_type == "ttest_paired") {
@@ -1275,6 +1460,11 @@ server <- function(input, output, session) {
           type = "correlation",
           test_name = "Pearson Correlation Matrix",
           variables = input$corr_cols,
+          statistic = NA,
+          df = NA,
+          p_value = NA,
+          interpretation = paste("Computed pairwise Pearson correlations for", length(input$corr_cols), "variables."),
+          is_significant = NA,
           cor_matrix = res$correlation,
           p_matrix = res$p_values
         )
@@ -1289,13 +1479,97 @@ server <- function(input, output, session) {
       showNotification(paste(result$test_name, "complete!"), type = "message")
     }
   })
-  
+
+  # ---- COMPOSITE VARIABLE ----
+  observeEvent(input$create_composite, {
+    req(cleaned_data(), input$composite_cols, input$composite_name)
+    if (length(input$composite_cols) < 2) {
+      showNotification("Select at least 2 columns for composite score.", type = "warning")
+      return()
+    }
+    data <- cleaned_data()
+    data[[input$composite_name]] <- rowMeans(data[, input$composite_cols, drop = FALSE], na.rm = TRUE)
+    cleaned_data(data)
+
+    sheet_map <- cleaned_sheets_data()
+    sheet_map[[active_sheet()]] <- data
+    cleaned_sheets_data(sheet_map)
+
+    update_column_selectors(data)
+    showNotification(paste("Created composite variable:", input$composite_name), type = "message")
+  })
+
+  # ---- CRONBACH'S ALPHA ----
+  observeEvent(input$run_alpha, {
+    req(cleaned_data(), input$alpha_cols)
+    if (length(input$alpha_cols) < 2) {
+      showNotification("Select at least 2 columns for Cronbach's Alpha.", type = "warning")
+      return()
+    }
+    data <- cleaned_data()
+    tryCatch({
+      alpha_res <- psych::alpha(data[, input$alpha_cols, drop = FALSE])
+      raw_alpha <- alpha_res$total$raw_alpha
+      showNotification(paste("Cronbach's Alpha:", round(raw_alpha, 3)), type = "message")
+      alpha_result(list(value = raw_alpha, n = length(input$alpha_cols)))
+    }, error = function(e) {
+      showNotification(paste("Alpha calculation error:", e$message), type = "error")
+    })
+  })
+
+  output$alpha_result <- renderUI({
+    req(alpha_result())
+    tags$div(
+      style = "margin-top: 8px; padding: 8px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;",
+      tags$strong("Cronbach's Alpha: "),
+      tags$span(style = "color: #0ea5e9;", round(alpha_result()$value, 3)),
+      tags$br(),
+      tags$small(style = "color: #E0E0E0;", paste("Items:", alpha_result()$n))
+    )
+  })
+
+  # ---- T-TEST DESCRIPTIVE TABLE ----
+  output$ttest_descriptive_table <- DT::renderDataTable({
+    req(hypothesis_results())
+    res <- hypothesis_results()
+    req(res$type == "ttest_ind")
+
+    df <- data.frame(
+      Group = c(res$g1_name, res$g2_name),
+      Mean = c(res$mean_g1, res$mean_g2),
+      SD = c(res$sd_g1, res$sd_g2),
+      n = c(res$n_g1, res$n_g2),
+      stringsAsFactors = FALSE
+    )
+
+    DT::datatable(df, options = list(dom = "t", ordering = FALSE), rownames = FALSE, class = "compact row-border")
+  }, server = TRUE)
+
   output$hypothesis_summary <- renderUI({
     req(hypothesis_results())
     res <- hypothesis_results()
     
-    sig_color <- if (res$is_significant) "#ef4444" else "#10b981"
-    sig_icon <- if (res$is_significant) "circle-xmark" else "circle-check"
+    sig_color <- if (isTRUE(res$is_significant)) {
+      "#ef4444"
+    } else if (identical(res$is_significant, FALSE)) {
+      "#10b981"
+    } else {
+      "#E0E0E0"
+    }
+    sig_icon <- if (isTRUE(res$is_significant)) {
+      "circle-xmark"
+    } else if (identical(res$is_significant, FALSE)) {
+      "circle-check"
+    } else {
+      "circle-question"
+    }
+    p_value_text <- if (!is.null(res$p_value) && !is.na(res$p_value)) {
+      formatC(res$p_value, format = "e", digits = 2)
+    } else {
+      "N/A"
+    }
+    statistic_text <- format_hypothesis_metric(res$statistic, digits = 3)
+    df_text <- format_hypothesis_metric(res$df)
     
     tags$div(
       style = "display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;",
@@ -1306,46 +1580,48 @@ server <- function(input, output, session) {
       tags$div(class = "stat-badge",
                tags$span(class = "stat-icon", icon("chart-line")),
                tags$div(tags$div(class = "stat-label", "Statistic"),
-                        tags$div(class = "stat-value", if (!is.null(res$statistic)) round(res$statistic, 3) else "N/A"))),
+                        tags$div(class = "stat-value", statistic_text))),
       tags$div(class = "stat-badge",
                tags$span(class = "stat-icon", icon("hashtag")),
                tags$div(tags$div(class = "stat-label", "df"),
-                        tags$div(class = "stat-value", if (!is.null(res$df)) res$df else "N/A"))),
+                        tags$div(class = "stat-value", df_text))),
       tags$div(class = "stat-badge",
                tags$span(class = "stat-icon", icon(sig_icon)),
-               tags$div(tags$div(class = "stat-label", "P-value"),
-                        tags$div(class = "stat-value", style = paste0("color:", sig_color, ";"), if (!is.null(res$p_value)) formatC(res$p_value, format = "e", digits = 2) else "N/A")))
+                tags$div(tags$div(class = "stat-label", "P-value"),
+                        tags$div(class = "stat-value", style = paste0("color:", sig_color, ";"), p_value_text)))
     )
   })
   
   output$hypothesis_table <- DT::renderDataTable({
     req(hypothesis_results())
     res <- hypothesis_results()
+    variable_label <- format_hypothesis_variable_label(res)
     
     df <- data.frame(
       Metric = c("Test", "Variable(s)", "Statistic", "df", "P-value", "Interpretation"),
       Value = c(
-        res$test_name,
-        if (!is.null(res$variable)) res$variable else if (!is.null(res$variables)) paste(res$variables, collapse = ", ") else paste(res$var1, "vs", res$var2),
-        if (!is.null(res$statistic)) round(res$statistic, 4) else "N/A",
-        if (!is.null(res$df)) as.character(res$df) else "N/A",
-        if (!is.null(res$p_value)) formatC(res$p_value, format = "e", digits = 3) else "N/A",
-        res$interpretation
+        format_hypothesis_metric(res$test_name),
+        variable_label,
+        format_hypothesis_metric(res$statistic, digits = 4),
+        format_hypothesis_metric(res$df),
+        format_hypothesis_metric(res$p_value, digits = 3, scientific = TRUE),
+        format_hypothesis_metric(res$interpretation)
       ),
       stringsAsFactors = FALSE
     )
     
-    DT::datatable(df, options = list(dom = "t", ordering = FALSE), rownames = FALSE, class = "compact row-border") %>%
-      DT::formatStyle("Value", color = "#e2e8f0")
-  })
+    DT::datatable(df, options = list(dom = "t", ordering = FALSE, deferRender = TRUE), rownames = FALSE, class = "compact row-border") %>%
+      DT::formatStyle("Value", color = "#FFFFFF")
+  }, server = TRUE)
   
   output$hypothesis_plot <- renderPlotly({
     req(hypothesis_results())
     res <- hypothesis_results()
     
     if (res$type == "normality") {
-      plotly::ggplotly(res$plot, tooltip = c("x", "y")) %>%
-        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+      plotly::ggplotly(res$plot, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+        plotly::config(displayModeBar = FALSE)
     } else if (res$type == "ttest_ind") {
       pd <- res$plot_data
       colnames(pd) <- c("Value", "Group")
@@ -1358,15 +1634,16 @@ server <- function(input, output, session) {
           legend.position = "none",
           plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
           panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
-          plot.title = ggplot2::element_text(color = "#e2e8f0"),
-          axis.text = ggplot2::element_text(color = "#94a3b8"),
-          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          plot.title = ggplot2::element_text(color = "#FFFFFF"),
+          axis.text = ggplot2::element_text(color = "#E0E0E0"),
+          axis.title = ggplot2::element_text(color = "#E0E0E0"),
           panel.grid.major = ggplot2::element_line(color = "#334155"),
           panel.grid.minor = ggplot2::element_line(color = "#1e293b")
         ) +
         ggplot2::labs(title = paste("Distribution by Group:", res$variable), y = res$variable)
-      plotly::ggplotly(p, tooltip = c("x", "y")) %>%
-        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+      plotly::ggplotly(p, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+        plotly::config(displayModeBar = FALSE)
     } else if (res$type == "ttest_paired") {
       pd <- res$plot_data
       colnames(pd) <- c("Before", "After")
@@ -1380,15 +1657,16 @@ server <- function(input, output, session) {
           legend.position = "none",
           plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
           panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
-          plot.title = ggplot2::element_text(color = "#e2e8f0"),
-          axis.text = ggplot2::element_text(color = "#94a3b8"),
-          axis.title = ggplot2::element_text(color = "#94a3b8"),
+          plot.title = ggplot2::element_text(color = "#FFFFFF"),
+          axis.text = ggplot2::element_text(color = "#E0E0E0"),
+          axis.title = ggplot2::element_text(color = "#E0E0E0"),
           panel.grid.major = ggplot2::element_line(color = "#334155"),
           panel.grid.minor = ggplot2::element_line(color = "#1e293b")
         ) +
         ggplot2::labs(title = "Paired Comparison", y = "Value")
-      plotly::ggplotly(p, tooltip = c("x", "y")) %>%
-        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+      plotly::ggplotly(p, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+        plotly::config(displayModeBar = FALSE)
     } else if (res$type == "chisq") {
       obs <- res$observed
       obs$Var1 <- rownames(obs)
@@ -1399,47 +1677,198 @@ server <- function(input, output, session) {
         ggplot2::theme(
           plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
           panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
-          plot.title = ggplot2::element_text(color = "#e2e8f0"),
-          axis.text = ggplot2::element_text(color = "#94a3b8"),
-          axis.title = ggplot2::element_text(color = "#94a3b8"),
-          legend.text = ggplot2::element_text(color = "#94a3b8"),
-          legend.title = ggplot2::element_text(color = "#94a3b8"),
+          plot.title = ggplot2::element_text(color = "#FFFFFF"),
+          axis.text = ggplot2::element_text(color = "#E0E0E0"),
+          axis.title = ggplot2::element_text(color = "#E0E0E0"),
+          legend.text = ggplot2::element_text(color = "#E0E0E0"),
+          legend.title = ggplot2::element_text(color = "#E0E0E0"),
           panel.grid.major = ggplot2::element_line(color = "#334155"),
           panel.grid.minor = ggplot2::element_line(color = "#1e293b")
         ) +
         ggplot2::labs(title = paste("Grouped Bar Chart:", res$var1, "vs", res$var2), x = res$var1, fill = res$var2) +
         ggplot2::scale_fill_brewer(palette = "Set2")
-      plotly::ggplotly(p, tooltip = c("x", "y", "fill")) %>%
-        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+      plotly::ggplotly(p, tooltip = c("x", "y", "fill"), dynamicTicks = FALSE) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+        plotly::config(displayModeBar = FALSE)
     } else if (res$type == "correlation") {
       cor_df <- as.data.frame(res$cor_matrix)
       cor_df$Var1 <- rownames(cor_df)
       cor_long <- tidyr::pivot_longer(cor_df, cols = -Var1, names_to = "Var2", values_to = "Correlation")
       p <- ggplot2::ggplot(cor_long, ggplot2::aes(x = Var1, y = Var2, fill = Correlation)) +
         ggplot2::geom_tile(color = "#334155", size = 0.5) +
-        ggplot2::geom_text(ggplot2::aes(label = round(Correlation, 2)), color = "#e2e8f0", size = 3.5) +
+        ggplot2::geom_text(ggplot2::aes(label = round(Correlation, 2)), color = "#FFFFFF", size = 3.5) +
         ggplot2::scale_fill_gradient2(low = "#ef4444", mid = "#1e293b", high = "#10b981", midpoint = 0, limits = c(-1, 1)) +
         ggplot2::theme_minimal(base_size = 13) +
         ggplot2::theme(
           plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
           panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
-          plot.title = ggplot2::element_text(color = "#e2e8f0"),
-          axis.text = ggplot2::element_text(color = "#94a3b8"),
-          axis.title = ggplot2::element_text(color = "#94a3b8"),
-          legend.text = ggplot2::element_text(color = "#94a3b8"),
-          legend.title = ggplot2::element_text(color = "#94a3b8"),
+          plot.title = ggplot2::element_text(color = "#FFFFFF"),
+          axis.text = ggplot2::element_text(color = "#E0E0E0"),
+          axis.title = ggplot2::element_text(color = "#E0E0E0"),
+          legend.text = ggplot2::element_text(color = "#E0E0E0"),
+          legend.title = ggplot2::element_text(color = "#E0E0E0"),
           panel.grid = ggplot2::element_blank()
         ) +
         ggplot2::labs(title = "Correlation Heatmap", x = NULL, y = NULL)
-      plotly::ggplotly(p, tooltip = c("x", "y", "fill")) %>%
-        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#e2e8f0")))
+      plotly::ggplotly(p, tooltip = c("x", "y", "fill"), dynamicTicks = FALSE) %>%
+        plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+        plotly::config(displayModeBar = FALSE)
     }
   })
-  
+
+  # ---- REGRESSION ANALYSIS ----
+  observeEvent(input$run_regression, {
+    req(get_active_analysis_data(), input$reg_x_name, input$reg_y_name)
+    data <- get_active_analysis_data()
+
+    if (is.null(data) || nrow(data) == 0) {
+      showNotification("No data available for regression.", type = "error")
+      return()
+    }
+
+    df <- data
+    x_name <- input$reg_x_name
+    y_name <- input$reg_y_name
+
+    # Resolve X variable
+    x_cols <- input$reg_x_cols
+    if (!is.null(x_cols) && length(x_cols) > 0) {
+      if (length(x_cols) == 1) {
+        df[[x_name]] <- as.numeric(df[[x_cols]])
+      } else {
+        df[[x_name]] <- rowMeans(df[, x_cols, drop = FALSE], na.rm = TRUE)
+      }
+    }
+
+    # Resolve Y variable
+    y_cols <- input$reg_y_cols
+    if (!is.null(y_cols) && length(y_cols) > 0) {
+      if (length(y_cols) == 1) {
+        df[[y_name]] <- as.numeric(df[[y_cols]])
+      } else {
+        df[[y_name]] <- rowMeans(df[, y_cols, drop = FALSE], na.rm = TRUE)
+      }
+    }
+
+    if (!(x_name %in% names(df)) || !(y_name %in% names(df))) {
+      showNotification("Selected variables not found in data. Choose columns or ensure variable names exist.", type = "error")
+      return()
+    }
+
+    tryCatch({
+      res <- run_regression_analysis(df, x_name, y_name)
+      regression_results(res)
+      showNotification("Regression analysis complete!", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Regression error:", e$message), type = "error")
+    })
+  })
+
+  output$regression_summary <- renderUI({
+    req(regression_results())
+    res <- regression_results()
+    tags$div(
+      tags$h4(style = "color: #0ea5e9;", icon("chart-line"), "Regression Summary"),
+      tags$div(style = "display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;",
+               tags$div(class = "stat-badge",
+                        tags$span(class = "stat-icon", icon("ruler-combined")),
+                        tags$div(tags$div(class = "stat-label", "R-squared"),
+                                 tags$div(class = "stat-value", res$r_squared))),
+               tags$div(class = "stat-badge",
+                        tags$span(class = "stat-icon", icon("ruler-combined")),
+                        tags$div(tags$div(class = "stat-label", "Adj. R-squared"),
+                                 tags$div(class = "stat-value", res$adj_r_squared))),
+               tags$div(class = "stat-badge",
+                        tags$span(class = "stat-icon", icon("users")),
+                        tags$div(tags$div(class = "stat-label", "N"),
+                                 tags$div(class = "stat-value", res$n)))
+      )
+    )
+  })
+
+  output$regression_table <- DT::renderDataTable({
+    req(regression_results())
+    res <- regression_results()
+    df <- data.frame(
+      Metric = c("Intercept", "Slope (Beta)", "P-value", "R-squared", "Adjusted R-squared", "Pearson r"),
+      Value = c(res$intercept, res$slope, res$p_value, res$r_squared, res$adj_r_squared, res$correlation),
+      stringsAsFactors = FALSE
+    )
+    DT::datatable(df, options = list(dom = "t", ordering = FALSE), rownames = FALSE, class = "compact row-border")
+  }, server = TRUE)
+
+  output$regression_plot <- renderPlotly({
+    req(regression_results(), get_active_analysis_data())
+    res <- regression_results()
+    data <- get_active_analysis_data()
+
+    x_name <- input$reg_x_name
+    y_name <- input$reg_y_name
+    x_cols <- input$reg_x_cols
+    y_cols <- input$reg_y_cols
+
+    if (!is.null(x_cols) && length(x_cols) > 0) {
+      if (length(x_cols) == 1) {
+        data[[x_name]] <- as.numeric(data[[x_cols]])
+      } else {
+        data[[x_name]] <- rowMeans(data[, x_cols, drop = FALSE], na.rm = TRUE)
+      }
+    }
+    if (!is.null(y_cols) && length(y_cols) > 0) {
+      if (length(y_cols) == 1) {
+        data[[y_name]] <- as.numeric(data[[y_cols]])
+      } else {
+        data[[y_name]] <- rowMeans(data[, y_cols, drop = FALSE], na.rm = TRUE)
+      }
+    }
+
+    plot_df <- data[, c(x_name, y_name), drop = FALSE]
+    plot_df <- plot_df[stats::complete.cases(plot_df), , drop = FALSE]
+
+    p <- ggplot2::ggplot(plot_df, ggplot2::aes_string(x = paste0("`", x_name, "`"), y = paste0("`", y_name, "`"))) +
+      ggplot2::geom_point(alpha = 0.6, color = "#0ea5e9", size = 2) +
+      ggplot2::geom_smooth(method = "lm", color = "#ef4444", fill = "#ef4444", alpha = 0.15) +
+      ggplot2::annotate("text", x = -Inf, y = Inf, label = paste("r =", res$correlation),
+                        hjust = -0.1, vjust = 1.5, color = "#FFFFFF", size = 4) +
+      ggplot2::theme_minimal(base_size = 13) +
+      ggplot2::theme(
+        plot.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+        panel.background = ggplot2::element_rect(fill = "#1e293b", color = NA),
+        plot.title = ggplot2::element_text(color = "#FFFFFF"),
+        axis.text = ggplot2::element_text(color = "#E0E0E0"),
+        axis.title = ggplot2::element_text(color = "#E0E0E0"),
+        panel.grid.major = ggplot2::element_line(color = "#334155"),
+        panel.grid.minor = ggplot2::element_line(color = "#1e293b")
+      ) +
+      ggplot2::labs(title = paste("Regression:", input$reg_y_name, "~", input$reg_x_name), x = input$reg_x_name, y = input$reg_y_name)
+
+    plotly::ggplotly(p, tooltip = c("x", "y"), dynamicTicks = FALSE) %>%
+      plotly::layout(hoverlabel = list(bgcolor = "#1e293b", font = list(color = "#FFFFFF"))) %>%
+      plotly::config(displayModeBar = FALSE)
+  })
+
+  output$regression_interpretation <- renderUI({
+    req(regression_results())
+    res <- regression_results()
+    if (res$p_value < 0.05 && res$slope > 0) {
+      tags$div(style = "padding: 12px; background: #064e3b; border: 1px solid #10b981; border-radius: 8px; color: #10b981;",
+               icon("circle-check"), tags$strong(" Significant positive relationship."),
+               tags$p("There is a statistically significant positive relationship (p < 0.05)."))
+    } else if (res$p_value < 0.05 && res$slope < 0) {
+      tags$div(style = "padding: 12px; background: #451a1a; border: 1px solid #ef4444; border-radius: 8px; color: #ef4444;",
+               icon("circle-xmark"), tags$strong(" Significant negative relationship."),
+               tags$p("The slope is negative and statistically significant (p < 0.05)."))
+    } else {
+      tags$div(style = "padding: 12px; background: #422006; border: 1px solid #f59e0b; border-radius: 8px; color: #f59e0b;",
+               icon("triangle-exclamation"), tags$strong(" No significant relationship."),
+               tags$p("No statistically significant relationship detected (p >= 0.05)."))
+    }
+  })
+
   # ---- DATA CLEANING ----
   observeEvent(input$apply_cleaning, {
-    req(raw_data(), input$clean_cols)
-    data <- raw_data()
+    req(cleaned_data(), input$clean_cols)
+    data <- cleaned_data()
     k <- input$clean_iqr_k
     cols <- input$clean_cols
     method <- input$clean_method
@@ -1471,6 +1900,11 @@ server <- function(input, output, session) {
     }
     
     cleaned_data(data)
+    cleaned_sheet_map <- cleaned_sheets_data()
+    cleaned_sheet_map[[active_sheet()]] <- data
+    cleaned_sheets_data(cleaned_sheet_map)
+    reset_analysis_results()
+    update_column_selectors(data)
     removed <- original_rows - nrow(data)
     showNotification(
       paste("Cleaning applied!", if (method == "remove") paste(removed, "rows removed") else "Values adjusted"),
@@ -1492,6 +1926,7 @@ server <- function(input, output, session) {
         searching = TRUE,
         info = FALSE,
         ordering = TRUE,
+        deferRender = TRUE,
         columnDefs = list(list(width = "120px", targets = "_all"))
       ),
       class = "compact row-border",
@@ -1500,7 +1935,7 @@ server <- function(input, output, session) {
       style = "default",
       selection = "none"
     )
-  })
+  }, server = TRUE)
   
   output$cleaning_summary <- renderUI({
     req(raw_data(), cleaned_data())
